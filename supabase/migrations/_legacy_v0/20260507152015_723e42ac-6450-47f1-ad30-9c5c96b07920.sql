@@ -1,0 +1,1 @@
+DELETE FROM public.feed_items WHERE who_for IS NULL OR usefulness < 55 OR humanized = false;

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Signal — AI Intelligence Dashboard</title>
+    <meta name="description" content="High-signal AI tools, updates, and underrated picks. No noise. Curated by AI, ranked for usefulness.">
+    <meta name="author" content="Signal" />
+    <meta name="application-name" content="Signal" />
+
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=2" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png?v=2" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2" />
+    <link rel="manifest" href="/manifest.json?v=2" />
+
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Signal" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+    
+    
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/icon-512.png?v=2">
+    <meta property="og:site_name" content="Signal" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    
+    <meta name="twitter:image" content="/icon-512.png?v=2">
+
+    <style>
+      #signal-splash {
+        position: fixed; inset: 0; background: #000; display: flex;
+        align-items: center; justify-content: center; z-index: 9999;
+        transition: opacity 300ms ease;
+      }
+      #signal-splash img { width: 128px; height: 128px; filter: drop-shadow(0 0 30px rgba(57,255,20,0.45)); }
+      #signal-splash.hidden { opacity: 0; pointer-events: none; }
+    </style>
+    <meta property="og:title" content="Signal — AI Intelligence Dashboard">
+  <meta name="twitter:title" content="Signal — AI Intelligence Dashboard">
+  <meta property="og:description" content="High-signal AI tools, updates, and underrated picks. No noise. Curated by AI, ranked for usefulness.">
+  <meta name="twitter:description" content="High-signal AI tools, updates, and underrated picks. No noise. Curated by AI, ranked for usefulness.">
+</head>
+
+  <body>
+    <div id="signal-splash"><img src="/apple-touch-icon.png?v=2" alt="Signal" /></div>
+    <div id="root"></div>
+    <script>
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          const s = document.getElementById('signal-splash');
+          if (s) { s.classList.add('hidden'); setTimeout(() => s.remove(), 350); }
+        }, 250);
+      });
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
