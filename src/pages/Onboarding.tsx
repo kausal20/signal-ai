@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import {
@@ -25,8 +25,21 @@ import { track } from "@/lib/signals";
 import { useOnboarding } from "@/hooks/useOnboarding";
 import { cn } from "@/lib/utils";
 import signalLogo from "@/assets/signal-logo.png";
+import {
+  OnboardingShell, WelcomeStep, NameStep, RoleStep, GoalStep, InterestsStep,
+  TimeStep, ExperienceStep, NotificationsStep, LoadingStep, SuccessStep, STEP_ORDER,
+} from "@/signal-onboarding-ui";
 
-const TOTAL_STEPS = 9;
+// P5 migration flag — new ui onboarding. Old onboarding stays below until verified.
+const USE_V2_ONBOARDING = true;
+
+// The new Goal step uses id "discover"; the backend validates
+// "discover_business_opportunities". Map at the UI boundary so the stored value
+// stays backend-valid (and Settings-compatible). All other ids already match.
+const GOAL_TO_BACKEND: Record<string, string> = { discover: "discover_business_opportunities" };
+const GOAL_TO_UI: Record<string, string> = { discover_business_opportunities: "discover" };
+
+const TOTAL_STEPS = 10;
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ Dot Progress Bar Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 const StepDots = ({ current }: { current: number }) => (
@@ -773,6 +786,18 @@ export default function Onboarding() {
   const [weeklyTimeBudget, setWeeklyTimeBudget] = useState<string | null>(null);
   const [experienceLevel, setExperienceLevel] = useState<string | null>(null);
 
+  // UI-only navigation state for the v2 flow (answers stay in the model above).
+  const [vIndex, setVIndex] = useState(0);
+  const vNext = useCallback(() => setVIndex((i) => Math.min(i + 1, STEP_ORDER.length - 1)), []);
+  const advTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (advTimer.current) clearTimeout(advTimer.current); }, []);
+  const advance = () => { if (advTimer.current) clearTimeout(advTimer.current); advTimer.current = setTimeout(vNext, 320); };
+  const toggleInterest = useCallback(
+    (label: string) =>
+      setInterests((prev) => (prev.includes(label) ? prev.filter((x) => x !== label) : [...prev, label])),
+    [],
+  );
+
   const nextStep = () => setStep(s => Math.min(s + 1, TOTAL_STEPS));
   const finishOnboarding = async () => {
     track('onboarding_completed', {
@@ -795,6 +820,66 @@ export default function Onboarding() {
     navigate("/");
   };
 
+
+  // ── P5: ui onboarding (presentation only) ─────────────────────────────────
+  // Answers use the EXISTING state model above (single source of truth); vIndex
+  // is UI-only. Role/Goal auto-advance. Goal id is mapped to the backend-valid
+  // value on select so the stored profile + Settings stay consistent. Success
+  // calls the SAME finishOnboarding (track + completeOnboarding → localStorage +
+  // save-onboarding-profile with retry). Old flow below is unchanged.
+  if (USE_V2_ONBOARDING) {
+    const key = STEP_ORDER[vIndex];
+    const showBack = key !== "welcome" && key !== "success" && key !== "loading";
+    const hideDots = key === "welcome" || key === "loading" || key === "success";
+    return (
+      <OnboardingShell
+        step={vIndex + 1}
+        total={STEP_ORDER.length}
+        showBack={showBack}
+        hideDots={hideDots}
+        onBack={() => setVIndex((i) => Math.max(i - 1, 0))}
+      >
+        {key === "welcome" && <WelcomeStep onGetStarted={vNext} />}
+        {key === "name" && <NameStep value={name} onChange={setName} onContinue={vNext} />}
+        {key === "role" && (
+          <RoleStep value={primaryRole} onSelect={(id) => { setPrimaryRole(id); advance(); }} />
+        )}
+        {key === "goal" && (
+          <GoalStep
+            value={primaryGoal ? (GOAL_TO_UI[primaryGoal] ?? primaryGoal) : null}
+            onSelect={(id) => { setPrimaryGoal(GOAL_TO_BACKEND[id] ?? id); advance(); }}
+          />
+        )}
+        {key === "interests" && (
+          <InterestsStep selected={interests} onToggle={toggleInterest} onContinue={vNext} />
+        )}
+        {key === "time" && (
+          <TimeStep value={weeklyTimeBudget} onSelect={setWeeklyTimeBudget} onContinue={vNext} />
+        )}
+        {key === "experience" && (
+          <ExperienceStep value={experienceLevel} onSelect={setExperienceLevel} onContinue={vNext} />
+        )}
+        {key === "notifications" && (
+          <NotificationsStep
+            onChoose={(enabled) => {
+              try { localStorage.setItem("signal:notificationsEnabled", String(enabled)); } catch { /* quota */ }
+              vNext();
+            }}
+          />
+        )}
+        {key === "loading" && <LoadingStep onComplete={vNext} />}
+        {key === "success" && (
+          <SuccessStep
+            firstName={name.trim().split(" ")[0] || undefined}
+            topics={interests}
+            onEnter={finishOnboarding}
+          />
+        )}
+      </OnboardingShell>
+    );
+  }
+
+
   return (
     <div className="bg-background text-foreground h-full min-h-[100dvh] sm:min-h-full w-full overflow-hidden flex flex-col font-sans select-none pb-safe relative">
       {/* Progress dots */}
@@ -811,7 +896,8 @@ export default function Onboarding() {
           {step === 6 && <SingleSelectScreen key="s6" title="How much time can you invest in AI each week?" options={TIME_BUDGET_OPTIONS} value={weeklyTimeBudget} setValue={setWeeklyTimeBudget} onNext={nextStep} columns={1} />}
           {step === 7 && <SingleSelectScreen key="s7" title="What's your AI experience?" options={EXPERIENCE_OPTIONS} value={experienceLevel} setValue={setExperienceLevel} onNext={nextStep} columns={1} />}
           {step === 8 && <EnableNotificationsScreen key="s8" onNext={nextStep} />}
-          {step === 9 && <SuccessScreen key="s9" onFinish={finishOnboarding} />}
+          {step === 9 && <LoadingScreen key="s9" onNext={nextStep} />}
+          {step === 10 && <SuccessScreen key="s10" onFinish={finishOnboarding} />}
         </AnimatePresence>
       </div>
     </div>

@@ -7,26 +7,14 @@ interface Props {
 }
 
 export function Header({ lastUpdated, loading }: Props) {
-  const [currentTime, setCurrentTime] = useState(() => new Date());
   const [userName, setUserName] = useState("");
 
   useEffect(() => {
     const savedName = localStorage.getItem("signal:userName")?.trim() ?? "";
     setUserName(savedName);
-
-    const interval = window.setInterval(() => {
-      setCurrentTime(new Date());
-    }, 60_000);
-
-    return () => window.clearInterval(interval);
   }, []);
 
-  const greeting = (() => {
-    const h = currentTime.getHours();
-    if (h < 12) return "Good morning";
-    if (h < 17) return "Good afternoon";
-    return "Good evening";
-  })();
+  const greeting = "Welcome back";
 
   const updatedText = (() => {
     if (loading) return "Updating...";

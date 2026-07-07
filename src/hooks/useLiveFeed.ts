@@ -10,6 +10,8 @@ interface DbRow {
   url: string;
   tag: string;
   source: string;
+  source_label?: string | null;
+  source_quality?: { source_name?: string } | Record<string, unknown> | null;
   category: string;
   score: number;
   engagement: number;
@@ -32,6 +34,12 @@ export interface FetchStatus {
   triggeredAt: string | null;
 }
 
+function sourceNameFromQuality(sourceQuality: DbRow["source_quality"]): string | undefined {
+  if (!sourceQuality || typeof sourceQuality !== "object") return undefined;
+  const value = sourceQuality["source_name" as keyof typeof sourceQuality];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 function rowToItem(r: DbRow): FeedItem & { publishedAt: string; fetchedAt: string } {
   const impactRaw = (r.impact ?? "useful").toLowerCase();
   const impact = (impactRaw === "critical" || impactRaw === "major" ? impactRaw : "useful") as FeedItem["impact"];
@@ -43,6 +51,8 @@ function rowToItem(r: DbRow): FeedItem & { publishedAt: string; fetchedAt: strin
     url: r.url,
     tag: r.tag as FeedItem["tag"],
     source: r.source as FeedItem["source"],
+    sourceLabel: r.source_label ?? sourceNameFromQuality(r.source_quality),
+    sourceQuality: r.source_quality ?? undefined,
     category: r.category as FeedItem["category"],
     score: r.score,
     engagement: r.engagement,

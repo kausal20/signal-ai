@@ -35,15 +35,6 @@
     
     <meta name="twitter:image" content="/icon-512.png?v=2">
 
-    <style>
-      #signal-splash {
-        position: fixed; inset: 0; background: #000; display: flex;
-        align-items: center; justify-content: center; z-index: 9999;
-        transition: opacity 300ms ease;
-      }
-      #signal-splash img { width: 128px; height: 128px; filter: drop-shadow(0 0 30px rgba(57,255,20,0.45)); }
-      #signal-splash.hidden { opacity: 0; pointer-events: none; }
-    </style>
     <meta property="og:title" content="Signal — AI Intelligence Dashboard">
   <meta name="twitter:title" content="Signal — AI Intelligence Dashboard">
   <meta property="og:description" content="High-signal AI tools, updates, and underrated picks. No noise. Curated by AI, ranked for usefulness.">
@@ -51,16 +42,7 @@
 </head>
 
   <body>
-    <div id="signal-splash"><img src="/apple-touch-icon.png?v=2" alt="Signal" /></div>
     <div id="root"></div>
-    <script>
-      window.addEventListener('load', () => {
-        setTimeout(() => {
-          const s = document.getElementById('signal-splash');
-          if (s) { s.classList.add('hidden'); setTimeout(() => s.remove(), 350); }
-        }, 250);
-      });
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

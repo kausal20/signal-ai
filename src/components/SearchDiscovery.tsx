@@ -41,7 +41,9 @@ interface ResultGroup {
   items: FeedItem[];
 }
 
-const trendingSearches = [
+// Exported so the ui-v2 SearchPage (P3) reuses the same trending list instead of
+// duplicating it. Old SearchDiscovery keeps using it unchanged.
+export const trendingSearches = [
   "GPT-5.5",
   "Claude Code",
   "Cursor",
@@ -65,7 +67,7 @@ const exploreCards = [
   { title: "AI Agents", query: "AI agents", subtitle: "Autonomous tools and agent stacks", icon: Bot },
 ];
 
-const featuredCollections = [
+export const featuredCollections = [
   {
     title: "Best AI Coding Tools",
     description: "Editors, agents, CLIs, and repos builders are adopting now.",

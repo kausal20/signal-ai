@@ -17,6 +17,7 @@ dist-ssr
 .vite-dev.*.log
 .workspace/
 .git.broken-worktree-pointer
+.claude/
 supabase/.temp/
 
 # Editor directories and files

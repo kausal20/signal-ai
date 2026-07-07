@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Brain, Rocket, Wrench, Workflow, TrendingUp, ShieldAlert,
   Bookmark, Play, Clock, Zap, Check, Circle, Plus, Minus,
@@ -8,14 +8,20 @@ import { usePersonalizedFeed } from "@/hooks/usePersonalizedFeed";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { BottomNav } from "@/components/BottomNav";
 import { SignalScoreRing } from "@/components/SignalScoreRing";
-import { startProject } from "@/lib/projects";
+import { startProject, getProject } from "@/lib/projects";
 import { track, trackOutcome } from "@/lib/signals";
+import { AdvisorPage } from "@/ui-v2/pages/AdvisorPage";
+import { mapRecommendation, mapProject, mapPlanSteps } from "@/adapters/homeV2";
+
+// P2 migration flag — new ui-v2 Advisor. Old Advisor stays below until verified.
+const USE_V2_ADVISOR = true;
 
 const today = new Date().toISOString().slice(0, 10);
 
 interface PlanAction { id: string; title: string; why: string; time: string; impact: string; }
 
 export default function Advisor() {
+  const navigate = useNavigate();
   const { items, advisor, profile, status } = usePersonalizedFeed();
   const [bookmarks, setBookmarks] = useLocalStorage<string[]>("signal:bookmarks", []);
   const [done, setDone] = useLocalStorage<string[]>(`signal:advisor-done:${today}`, []);
@@ -68,6 +74,37 @@ export default function Advisor() {
 
   const loading = status.loading && items.length === 0;
   const heroScore = hero ? (hero.intel?.signalScore ?? hero.score) : 0;
+
+  // ── P2: ui-v2 Advisor ───────────────────────────────────────────────────
+  // Presentation swap only. Same hooks, same derived data (hero/whyRows/actions
+  // from usePersonalizedFeed + advisor object), same handlers + tracking. Old
+  // Advisor below stays as fallback for loading/empty and while flag is on.
+  if (USE_V2_ADVISOR && !loading && hero) {
+    const name =
+      (typeof localStorage !== "undefined" && localStorage.getItem("signal:userName")) || "there";
+    const navSection = (s: string) => {
+      if (s === "home") navigate("/");
+      else if (s === "search") navigate("/?section=search");
+      else if (s === "saved") navigate("/?section=saved");
+      else if (s === "settings") navigate("/settings");
+      // "advisor" → already here, no-op
+    };
+
+    return (
+      <AdvisorPage
+        greeting={`${name}, here's your focus.`}
+        recommendation={mapRecommendation(hero, bookmarks.includes(hero.id))}
+        reasons={whyRows}
+        plan={mapPlanSteps(actions, done)}
+        project={mapProject(getProject(), items) ?? undefined}
+        bookmarkCount={bookmarks.length}
+        onNavigate={navSection}
+        onStart={() => { startProject(hero); trackOutcome("built", hero.id); track("opened", { feed_item_id: hero.id }); }}
+        onToggleSave={(id) => toggleBookmark(id)}
+        onToggleStep={(id) => toggleDone(id)}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground pb-28">

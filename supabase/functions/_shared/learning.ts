@@ -12,6 +12,7 @@ import {
   PERSONAS_V2, type PersonaV2, type StoryIntelligence, type IntelOpportunity,
 } from "./intelligence_v2.ts";
 import { normConcept } from "./semantic.ts";
+import { deriveLearning } from "./continuous_learning.ts";
 import type { StoredStory } from "./intelligence_engine.ts";
 
 const DECAY = 0.97;                  // old weight retention per update
@@ -179,6 +180,21 @@ export async function learnAndPersist(
     if (top && profile.signal_count >= 6) profile.persona = top[0];
   }
 
+  // Module 5 — derived, explainable learning signals (confidence / clusters /
+  // opportunity weights) computed from the just-evolved profile. Additive: these
+  // are new columns and change nothing existing or the ranking.
+  const derived = deriveLearning(profile);
+
+  // Identity spine: user_profiles.client_id → clients(client_id). Guarantee the
+  // parent row exists before the profile write so anonymous users learn from the
+  // first signal (no onboarding/auth needed). Idempotent INSERT ... ON CONFLICT
+  // DO NOTHING — never modifies an existing clients row (safe for future auth /
+  // account-linking) and race-safe under concurrent requests.
+  await dbWrite("clients.ensure", () => sb.from("clients").upsert(
+    { client_id: profile.client_id },
+    { onConflict: "client_id", ignoreDuplicates: true },
+  ));
+
   await dbWrite("user_profiles.upsert", () => sb.from("user_profiles").upsert({
     client_id: profile.client_id,
     persona: profile.persona,
@@ -198,6 +214,10 @@ export async function learnAndPersist(
     dismissed_count: profile.dismissed_count,
     reading_ms_total: profile.reading_ms_total,
     last_signal_at: profile.last_signal_at,
+    // Module 5 derived columns (additive).
+    dimension_confidence: derived.dimension_confidence,
+    clusters: derived.clusters,
+    opportunity_weights: derived.opportunity_weights,
     updated_at: new Date().toISOString(),
   }, { onConflict: "client_id" }));
 

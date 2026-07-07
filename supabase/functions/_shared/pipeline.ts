@@ -13,6 +13,10 @@ import {
 import { persistStoryIntelligence, buildTrendContext } from "./intelligence_v2.ts";
 import { runAgentReasoning } from "./agents.ts";
 import { estimateROI } from "./roi.ts";
+import { buildScoreBreakdown } from "./scoring.ts";
+import { evaluateSource } from "./source_quality.ts";
+import { runRuleEngine, buildRuleContext } from "./rules/engine.ts";
+import { generateOpportunity } from "./opportunity.ts";
 import { embedAndStoreStories, embedAndStoreConcepts } from "./vector_store.ts";
 import { getEmbeddingProvider } from "./embeddings.ts";
 import type { StoredStory } from "./intelligence_engine.ts";
@@ -173,6 +177,61 @@ export async function runPipeline(input: OrchestratorInput): Promise<Orchestrato
     const daily = assembleDailyFeed(polished);
     await storeClusters(sb, clusters, curated);
     await storeEditorialAudits(sb, allAudits);
+    // Phase 4 · Module 1 — attach the explainable scoring layer. ADDITIVE ONLY:
+    // it reads the already-computed dimension scores and never mutates `score`,
+    // `leverage_score`, or anything rankItems/assembleDailyFeed read, so the
+    // feed order is unchanged. Runs after assembly on the final lineup.
+    const scoredAt = Date.now();
+    let factorTotal = 0;
+    let ruleMatchTotal = 0;
+    let oppTotal = 0;
+    for (const it of daily) {
+      const b = buildScoreBreakdown(it as any, scoredAt);
+      (it as any).score_factors = b.factors;
+      (it as any).freshness_score = b.freshness;
+      (it as any).confidence_band = b.confidence_band;
+      (it as any).developer_value = b.developer_value;
+      (it as any).founder_value = b.founder_value;
+      (it as any).investor_value = b.investor_value;
+      (it as any).learning_value = b.learning_value;
+      factorTotal += b.factors.length;
+      // Module 2 — explainable source quality (additive; never affects ranking).
+      const sq = evaluateSource({
+        url: it.url,
+        source: it.source,
+        source_label: it.source_label,
+        title: it.title,
+        summary: it.summary,
+        source_count: (it as any).source_count,
+        corroboration_score: it.corroboration_score,
+      });
+      (it as any).source_quality = sq;
+      // Module 8 — rule engine (runs AFTER source quality, BEFORE recommendation).
+      // Additive: writes a separate rule-intelligence layer; never mutates the
+      // ranking score or Module 1/2 columns.
+      const rc = buildRuleContext({
+        title: it.title, summary: it.summary, what_happened: (it as any).what_happened,
+        tag: it.tag, content_category: it.content_category, trend_entities: it.trend_entities,
+        developer_value: (it as any).developer_value, founder_value: (it as any).founder_value,
+        investor_value: (it as any).investor_value, learning_value: (it as any).learning_value,
+        source_quality: sq,
+      });
+      const re = runRuleEngine(rc);
+      (it as any).rule_intelligence = re.merged;
+      (it as any).matched_rules = re.merged.matched_rules;
+      ruleMatchTotal += re.merged.rule_count;
+      // Module 4 — opportunity intelligence (after rules, before recommendation).
+      // Consumes rules + source quality + score; additive; ranking untouched.
+      const opp = generateOpportunity({
+        id: it.id, title: it.title, summary: it.summary, why_it_matters: it.why_it_matters,
+        score: it.score, rule_intelligence: re.merged, matched_rules: re.merged.matched_rules,
+        source_quality: sq,
+      });
+      (it as any).opportunity_intel = opp ?? {};
+      (it as any).opportunity_type = opp?.type ?? null;
+      if (opp) oppTotal++;
+    }
+    if (daily.length > 0) logger.info("scoring_done", { stage: "publish", meta: { stories: daily.length, avg_factors: Math.round(factorTotal / daily.length), avg_rules: Math.round(ruleMatchTotal / daily.length), opportunities: oppTotal } });
     const fetchedAt = new Date().toISOString();
     if (daily.length > 0) {
       const { error } = await upsertFeedItems(sb, daily, fetchedAt);

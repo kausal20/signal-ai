@@ -11,6 +11,8 @@ export interface FeedItem {
   url: string;
   tag: FeedTag;
   source: FeedSource;
+  sourceLabel?: string;
+  sourceQuality?: { source_name?: string } | Record<string, unknown>;
   category: FeedCategory;
   score: number; // 0-100 composite signal score
   engagement: number; // raw stars/upvotes

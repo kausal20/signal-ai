@@ -158,6 +158,39 @@
   0% { opacity: 0; transform: translateY(12px); }
   100% { opacity: 1; transform: translateY(0); }
 }
+/* ui-v2 SignalProgress fill bar: animate width from 0 to its target (--w). */
+@keyframes fillBar {
+  from { width: 0; }
+  to { width: var(--w); }
+}
+/* onboarding-ui WelcomeStep: continuous upward feed-peek scroll. */
+@keyframes scrollUp {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+/* Premium welcome screen — GPU-accelerated vertical scroll (3 speeds) */
+@keyframes welcomeScrollCol1 {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(0, -50%, 0); }
+}
+@keyframes welcomeScrollCol2 {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(0, -50%, 0); }
+}
+@keyframes welcomeScrollCol3 {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(0, -50%, 0); }
+}
+/* Subtle horizontal float for organic feel */
+@keyframes sideFloat {
+  0%, 100% { transform: translate3d(-1.5px, 0, 0); }
+  50%      { transform: translate3d(1.5px, 0, 0); }
+}
+/* Neon pulse on high-score cards */
+@keyframes neonPulse {
+  0%, 100% { box-shadow: 0 0 0 0 hsla(152, 72%, 48%, 0); border-color: hsla(0, 0%, 100%, 0.06); }
+  50%      { box-shadow: 0 0 18px 2px hsla(152, 72%, 48%, 0.12); border-color: hsla(152, 72%, 48%, 0.18); }
+}
 @keyframes bounce-sm {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.2); }
@@ -254,6 +287,198 @@
 
 .animate-scale-in { animation: scale-in 360ms cubic-bezier(0.2,0,0,1) backwards; }
 .animate-bookmark { animation: bookmark-pop 420ms cubic-bezier(0.34,1.56,0.64,1); }
+
+/* ═══════════════════════════════════════════════
+   AMBIENT RADAR — Search Section Upgrade
+   ═══════════════════════════════════════════════ */
+
+/* Rotating conic gradient for the search bar border */
+@keyframes radar-border-spin {
+  from { --radar-angle: 0deg; }
+  to   { --radar-angle: 360deg; }
+}
+@property --radar-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* Radar sweep animation for the search icon */
+@keyframes radar-sweep {
+  0%   { transform: scale(1); opacity: 1; }
+  50%  { transform: scale(1.6); opacity: 0; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+/* Concentric rings expanding outward */
+@keyframes radar-ring {
+  0%   { transform: scale(0.5); opacity: 0.7; border-color: hsl(152 72% 48% / 0.5); }
+  100% { transform: scale(2.2); opacity: 0; border-color: hsl(152 72% 48% / 0); }
+}
+
+/* Gentle float for trending cards */
+@keyframes ambient-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+
+/* Heat bar fill with glow */
+@keyframes heat-fill {
+  from { width: 0; opacity: 0.6; }
+  to   { width: var(--heat); opacity: 1; }
+}
+
+/* Glow-trail pulse on sparklines */
+@keyframes glow-trail {
+  0%, 100% { filter: drop-shadow(0 0 4px hsl(152 72% 48% / 0.4)); }
+  50%      { filter: drop-shadow(0 0 12px hsl(152 72% 48% / 0.8)); }
+}
+
+/* Voice waveform idle breathing */
+@keyframes wave-breathe {
+  0%, 100% { transform: scaleY(0.3); }
+  50%      { transform: scaleY(1); }
+}
+
+/* Ripple from touch point */
+@keyframes intent-ripple {
+  0%   { transform: scale(0); opacity: 0.4; }
+  100% { transform: scale(4); opacity: 0; }
+}
+
+/* Station ring fill (conic) */
+@keyframes ring-fill {
+  from { --ring-progress: 0; }
+  to   { --ring-progress: var(--ring-target); }
+}
+@property --ring-progress {
+  syntax: '<number>';
+  initial-value: 0;
+  inherits: false;
+}
+
+/* Counter roll-up animation */
+@keyframes counter-roll {
+  0%   { transform: translateY(100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+/* Subtle scan-line sweep across a card */
+@keyframes scan-line {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(200%); }
+}
+
+@layer components {
+  /* Clean static search capsule */
+  .radar-search-capsule {
+    position: relative;
+    border-radius: 1.5rem;
+    background: hsl(0 0% 100% / 0.045);
+    border: 1px solid hsl(0 0% 100% / 0.08);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+  }
+  .radar-search-capsule.is-focused {
+    border-color: hsl(152 72% 48% / 0.32);
+    background: hsl(0 0% 100% / 0.065);
+  }
+
+  /* Horizontal signal card for trending */
+  .signal-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid hsl(0 0% 100% / 0.07);
+    border-radius: 1rem;
+    background: linear-gradient(135deg, hsl(0 0% 100% / 0.04), hsl(0 0% 100% / 0.015));
+    transition: all 300ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  .signal-card:hover {
+    border-color: hsl(152 72% 48% / 0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px -8px hsl(0 0% 0% / 0.5);
+  }
+
+  /* Mission-briefing intent card */
+  .mission-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid hsl(0 0% 100% / 0.07);
+    border-radius: 1.25rem;
+    background: linear-gradient(145deg, hsl(0 0% 100% / 0.04), hsl(0 0% 100% / 0.015));
+    transition: all 300ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  .mission-card:hover {
+    border-color: hsl(152 72% 48% / 0.22);
+    transform: translateY(-2px) scale(1.01);
+    box-shadow: 0 16px 40px -12px hsl(152 72% 48% / 0.15);
+  }
+  .mission-card::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.04), transparent);
+    transition: left 600ms ease;
+    pointer-events: none;
+  }
+  .mission-card:hover::after {
+    left: 150%;
+  }
+
+  /* Glowing orb for mission-card icons */
+  .glow-orb {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, hsl(152 72% 48% / 0.25), hsl(152 72% 48% / 0.08));
+    border: 1px solid hsl(152 72% 48% / 0.2);
+    box-shadow: 0 0 20px hsl(152 72% 48% / 0.15), inset 0 1px 0 hsl(0 0% 100% / 0.08);
+    color: hsl(152 72% 48%);
+  }
+  .glow-orb::before {
+    content: '';
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    background: radial-gradient(circle, hsl(152 72% 48% / 0.1), transparent 70%);
+    animation: glow-breathe 3s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  /* Station card for sources */
+  .station-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid hsl(0 0% 100% / 0.07);
+    border-radius: 1rem;
+    background: linear-gradient(135deg, hsl(0 0% 100% / 0.035), hsl(0 0% 100% / 0.012));
+    transition: all 300ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  .station-card:hover {
+    border-color: hsl(152 72% 48% / 0.2);
+    background: hsl(0 0% 100% / 0.055);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 28px -6px hsl(0 0% 0% / 0.5);
+  }
+
+  /* Progress ring for station cards */
+  .station-ring {
+    background: conic-gradient(
+      hsl(152 72% 48%) calc(var(--ring-progress, 0) * 1%),
+      hsl(0 0% 100% / 0.07) 0
+    );
+    border-radius: 50%;
+    animation: ring-fill 1.2s cubic-bezier(0.2, 0, 0, 1) forwards;
+    animation-delay: var(--ring-delay, 0ms);
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

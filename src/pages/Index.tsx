@@ -20,7 +20,31 @@ import { MissedToday } from "@/components/MissedToday";
 import { FeedSkeleton } from "@/components/Skeleton";
 import { SavedCollections } from "@/components/SavedCollections";
 import { initSignals, track, trackOutcome } from "@/lib/signals";
-import { touchProject } from "@/lib/projects";
+import { touchProject, getProject } from "@/lib/projects";
+import { TAGS } from "@/data/feed";
+import { HomePage } from "@/ui-v2/pages/HomePage";
+import { SearchPage } from "@/ui-v2/pages/SearchPage";
+import { SavedPage } from "@/ui-v2/pages/SavedPage";
+import { trendingSearches, featuredCollections } from "@/components/SearchDiscovery";
+import {
+  mapSignal, mapRecommendation, mapProject, mapTrending, mapCollections, mapSources,
+  SAVED_COLLECTIONS, classifySaved,
+} from "@/adapters/homeV2";
+
+// P1 migration flag — new ui-v2 Home. Old Home stays in this file until verified.
+const USE_V2_HOME = true;
+// P3 migration flag — new ui-v2 Search. Old SearchDiscovery stays until verified.
+const USE_V2_SEARCH = true;
+// P4 migration flag — new ui-v2 Saved. Old SavedCollections stays until verified.
+const USE_V2_SAVED = true;
+
+// Browse-by-intent → seed query (existing search behavior, no new logic).
+const INTENT_QUERY: Record<string, string> = {
+  build: "AI tools",
+  learn: "guide",
+  opportunity: "business idea",
+  catchup: "AI news",
+};
 
 type FeedSection = "home" | "search" | "saved";
 
@@ -28,11 +52,12 @@ const Index = () => {
   const navigate = useNavigate();
   const { isComplete, loading: onboardingLoading } = useOnboarding();
 
-  const { items: FEED, status, refresh, advisor } = usePersonalizedFeed();
+  const { items: FEED, status, refresh, advisor, profile } = usePersonalizedFeed();
   const [bookmarks, setBookmarks] = useLocalStorage<string[]>("signal:bookmarks", []);
   const [query, setQuery] = useState("");
   const [activeSection, setActiveSection] = useState<FeedSection>("home");
   const [activeTab, setActiveTab] = useState("all");
+  const [savedTab, setSavedTab] = useState("all");
 
   // Start the behavioural-signal session (idempotent) on mount.
   useEffect(() => initSignals(), []);
@@ -143,6 +168,153 @@ const Index = () => {
     if (activeTab !== "all") return `No ${activeTab} items right now. Try a different category.`;
     return "Try adjusting your filters.";
   })();
+
+  // ── P1: ui-v2 Home ──────────────────────────────────────────────────────
+  // Presentation swap only. Same hooks, same handlers, same personalized data
+  // (briefing) fed through adapters. Old Home below stays as the fallback for
+  // loading/empty and while USE_V2_HOME can be flipped off.
+  if (
+    USE_V2_HOME &&
+    activeSection === "home" &&
+    !(status.loading && FEED.length === 0) &&
+    FEED.length > 0
+  ) {
+    const isAll = activeTab === "all";
+    const heroItem = (isAll ? briefing.hero : null) ?? (filtered.length > 0 ? filtered[0] : null);
+    const briefItems = isAll ? briefing.chips : [];
+    const topItems = isAll ? briefing.top3 : [];
+    const feedItems = isAll
+      ? briefing.feed
+      : filtered.filter((i) => i.id !== heroItem?.id);
+
+    const criticalCount = FEED.filter((i) => i.impact === "critical").length;
+    const readMins = Math.max(1, Math.round(filtered.length * 0.7));
+    const name = (typeof localStorage !== "undefined" && localStorage.getItem("signal:userName")) || "there";
+
+    const openSignal = (id: string) => track("opened", { feed_item_id: id });
+    const navSection = (s: string) => {
+      if (s === "home") goHome();
+      else if (s === "search") goSearch();
+      else if (s === "saved") goSaved();
+      else if (s === "advisor") navigate("/advisor");
+      else if (s === "settings") navigate("/settings");
+    };
+
+    return (
+      <HomePage
+        profile={{
+          name,
+          initials: name.slice(0, 1).toUpperCase(),
+          confidence: typeof profile?.confidence === "number" ? profile.confidence : undefined,
+        }}
+        briefSummary={`${filtered.length} ${filtered.length === 1 ? "thing" : "things"} worth your time · ${readMins} min read`}
+        livePulseLabel={
+          criticalCount > 0
+            ? `${criticalCount} critical ${criticalCount === 1 ? "signal" : "signals"} today`
+            : "All quiet — nothing critical right now"
+        }
+        hero={heroItem ? mapRecommendation(heroItem, bookmarks.includes(heroItem.id)) : undefined}
+        emptyLabel={activeTab === "all" ? "You're all caught up" : `No ${activeTab} signals yet`}
+        brief={briefItems.map((i) => mapSignal(i, bookmarks.includes(i.id)))}
+        topSignals={topItems.map((i) => mapSignal(i, bookmarks.includes(i.id)))}
+        feed={feedItems.map((i) => mapSignal(i, bookmarks.includes(i.id)))}
+        categories={[{ id: "all", label: "All" }, ...TAGS.map((t) => ({ id: t.id, label: t.label }))]}
+        activeCategory={activeTab}
+        bookmarkCount={bookmarks.length}
+        project={mapProject(getProject(), FEED)}
+        onNavigate={navSection}
+        onOpenProfile={() => navigate("/settings")}
+        onSelectCategory={(id) => setActiveTab(id)}
+        onOpenSignal={openSignal}
+        onToggleSave={toggleBookmark}
+        onStartHero={(id) => { track("opened", { feed_item_id: id }); navigate("/advisor"); }}
+        onToggleHeroSave={(id) => toggleBookmark(id)}
+        onContinueProject={(id) => { touchProject(); track("opened", { feed_item_id: id }); }}
+      />
+    );
+  }
+
+  // ── P3: ui-v2 Search ─────────────────────────────────────────────────────
+  // Presentation swap only. Same `query` state, same `filtered` results, same
+  // `setQuery`/`toggleBookmark` handlers, same debounced search telemetry (fired
+  // by the effect above). Trending/collections/sources fed via adapters from
+  // existing data. Old SearchDiscovery below stays as the fallback.
+  if (USE_V2_SEARCH && isSearchSection) {
+    const q = query.trim();
+    const searchSources = mapSources(FEED);
+    const navSection = (s: string) => {
+      if (s === "home") goHome();
+      else if (s === "saved") goSaved();
+      else if (s === "advisor") navigate("/advisor");
+      else if (s === "settings") navigate("/settings");
+      // "search" → already here, no-op
+    };
+
+    return (
+      <SearchPage
+        query={query}
+        onQueryChange={setQuery}
+        placeholder="Search AI news, tools, prompts..."
+        matchCount={q ? filtered.length : undefined}
+        sourcesTracked={String(new Set(FEED.map((i) => i.source)).size)}
+        trending={mapTrending(trendingSearches, FEED)}
+        collections={mapCollections(featuredCollections, FEED)}
+        sources={searchSources}
+        results={q ? filtered.map((i) => mapSignal(i, bookmarks.includes(i.id))) : []}
+        bookmarkCount={bookmarks.length}
+        onNavigate={navSection}
+        onSubmitTerm={(term) => setQuery(term)}
+        onSelectIntent={(id) => setQuery(INTENT_QUERY[id] ?? id)}
+        onOpenCollection={(id) => setQuery(id)}
+        onOpenSource={(key) => {
+          const src = searchSources.find((x) => x.key === key);
+          setQuery(src?.term ?? key);
+        }}
+        onOpenSignal={(id) => track("opened", { feed_item_id: id })}
+        onToggleSave={toggleBookmark}
+      />
+    );
+  }
+
+  // ── P4: ui-v2 Saved ──────────────────────────────────────────────────────
+  // Presentation swap only. Same bookmark storage (`filtered` = saved items),
+  // same toggleBookmark handler + telemetry. The 5 collections are preserved as
+  // tabs with identical first-match classification. Old SavedCollections stays.
+  if (USE_V2_SAVED && isSavedSection) {
+    const savedItems = filtered; // already restricted to bookmarked items
+    const grouped = savedItems.map((i) => ({ item: i, group: classifySaved(i) }));
+    const savedTabs = SAVED_COLLECTIONS
+      .map((c) => ({
+        id: c.id,
+        label: c.label,
+        count: c.id === "all" ? savedItems.length : grouped.filter((g) => g.group === c.id).length,
+      }))
+      .filter((t) => t.id === "all" || t.count > 0);
+    const active = savedTabs.some((t) => t.id === savedTab) ? savedTab : "all";
+    const visible = active === "all" ? savedItems : grouped.filter((g) => g.group === active).map((g) => g.item);
+
+    const navSection = (s: string) => {
+      if (s === "home") goHome();
+      else if (s === "search") goSearch();
+      else if (s === "advisor") navigate("/advisor");
+      else if (s === "settings") navigate("/settings");
+      // "saved" → already here, no-op
+    };
+
+    return (
+      <SavedPage
+        items={visible.map((i) => mapSignal(i, true))}
+        tabs={savedTabs}
+        activeTab={active}
+        bookmarkCount={bookmarks.length}
+        onNavigate={navSection}
+        onSelectTab={setSavedTab}
+        onOpenSignal={(id) => track("opened", { feed_item_id: id })}
+        onToggleSave={toggleBookmark}
+        onBrowse={goHome}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground pb-24">

@@ -1,0 +1,150 @@
+/* signal-ui-v2 · styles/tokens.css
+   ---------------------------------------------------------------------------
+   These are the EXACT Signal design tokens + utility classes already defined
+   in your production `src/index.css`. They are reproduced here ONLY so this
+   package is self-contained and previewable in isolation.
+
+   ON MERGE: do NOT import this file. Your app's `index.css` already defines
+   every one of these. This file exists purely so a reviewer can open the
+   package standalone. Deleting it in production is expected and safe.
+   --------------------------------------------------------------------------- */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap');
+
+:root {
+  --background: 0 0% 3%;
+  --foreground: 140 5% 94%;
+  --card: 150 5% 6%;
+  --card-foreground: 140 5% 94%;
+  --popover: 150 5% 7%;
+  --muted: 150 5% 11%;
+  --muted-foreground: 150 5% 45%;
+  --accent: 150 5% 11%;
+  --destructive: 0 55% 50%;
+  --border: 150 5% 12%;
+  --input: 150 5% 12%;
+  --ring: 152 72% 48%;
+  --radius: 0.75rem;
+
+  --primary: 152 72% 48%;
+  --primary-foreground: 0 0% 2%;
+  --green: 152 72% 48%;
+  --green-soft: 152 50% 40%;
+  --green-dim: 152 40% 20%;
+  --amber: 38 92% 55%;
+  --red: 0 55% 50%;
+
+  --transition-spring: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  --transition-smooth: 300ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+html { color-scheme: dark; -webkit-tap-highlight-color: transparent; }
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11", "salt", "calt";
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: hsl(var(--green) / 0.25); color: hsl(var(--foreground)); }
+
+/* --- Surfaces --------------------------------------------------------------- */
+.glass-card {
+  background: hsl(0 0% 100% / 0.025);
+  border: 1px solid hsl(0 0% 100% / 0.06);
+  border-radius: var(--radius);
+  transition: all var(--transition-smooth);
+}
+.glass-card:hover {
+  background: hsl(0 0% 100% / 0.04);
+  border-color: hsl(var(--green) / 0.15);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 32px -8px hsl(0 0% 0% / 0.5);
+}
+.premium-card {
+  position: relative;
+  background: linear-gradient(180deg, hsl(0 0% 100% / 0.035) 0%, hsl(0 0% 100% / 0.012) 100%);
+  border: 1px solid hsl(0 0% 100% / 0.07);
+  border-radius: 1.25rem;
+  box-shadow: 0 1px 0 0 hsl(0 0% 100% / 0.04) inset, 0 12px 40px -16px hsl(0 0% 0% / 0.7);
+  transition: transform var(--transition-smooth), border-color var(--transition-smooth), box-shadow var(--transition-smooth);
+}
+.premium-card:active { transform: scale(0.992); }
+.premium-card.is-lift:hover {
+  transform: translateY(-2px);
+  border-color: hsl(var(--green) / 0.22);
+  box-shadow: 0 20px 50px -20px hsl(var(--green) / 0.18), 0 12px 40px -16px hsl(0 0% 0% / 0.7);
+}
+.green-halo {
+  background:
+    radial-gradient(120% 140% at 0% 0%, hsl(var(--green) / 0.10) 0%, transparent 55%),
+    linear-gradient(180deg, hsl(0 0% 100% / 0.04), hsl(0 0% 100% / 0.012));
+  border: 1px solid hsl(var(--green) / 0.16);
+  border-radius: 1.5rem;
+}
+
+/* --- Text / labels ---------------------------------------------------------- */
+.section-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.15em; color: hsl(var(--muted-foreground));
+  display: flex; align-items: center; gap: 0.5rem;
+}
+.section-label::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: hsl(var(--green)); flex-shrink: 0;
+}
+.font-mono-tight {
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Monaco, monospace;
+  letter-spacing: -0.01em;
+}
+
+/* --- Pills ------------------------------------------------------------------ */
+.pill {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.125rem 0.5rem; border-radius: 9999px;
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+  background: hsl(var(--green) / 0.1); color: hsl(var(--green)); border: 1px solid hsl(var(--green) / 0.15);
+}
+.pill-news { background: hsl(200 70% 50% / 0.1); color: hsl(200 70% 60%); border-color: hsl(200 70% 50% / 0.15); }
+.pill-prompt { background: hsl(var(--amber) / 0.1); color: hsl(var(--amber)); border-color: hsl(var(--amber) / 0.15); }
+.pill-usecase { background: hsl(280 60% 55% / 0.1); color: hsl(280 60% 65%); border-color: hsl(280 60% 55% / 0.15); }
+
+/* --- Utilities -------------------------------------------------------------- */
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.pressable { transition: transform var(--transition-smooth); }
+.pressable:active { transform: scale(0.96); }
+.hairline { height: 1px; background: linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.08), transparent); border: 0; }
+.skeleton { position: relative; overflow: hidden; background: hsl(0 0% 100% / 0.04); border-radius: 0.75rem; }
+.skeleton::after {
+  content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.06), transparent);
+  animation: shimmer 1.6s infinite;
+}
+@supports (padding: max(0px)) {
+  .pb-safe { padding-bottom: max(0.5rem, env(safe-area-inset-bottom)); }
+  .pt-safe { padding-top: max(0px, env(safe-area-inset-top)); }
+}
+
+/* --- Keyframes -------------------------------------------------------------- */
+@keyframes fade-up { 0% { opacity: 0; transform: translateY(12px); } 100% { opacity: 1; transform: translateY(0); } }
+@keyframes slide-down { 0% { opacity: 0; transform: translateY(-8px); } 100% { opacity: 1; transform: translateY(0); } }
+@keyframes scale-in { 0% { opacity: 0; transform: scale(0.96) translateY(6px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
+@keyframes bookmark-pop { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 70% { transform: scale(0.9); } 100% { transform: scale(1); } }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+.animate-fade-up { animation: fade-up 0.5s cubic-bezier(0.2, 0, 0, 1) both; }
+.animate-slide-down { animation: slide-down 0.3s cubic-bezier(0.2, 0, 0, 1) both; }
+.animate-scale-in { animation: scale-in 360ms cubic-bezier(0.2, 0, 0, 1) backwards; }
+.animate-bookmark { animation: bookmark-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

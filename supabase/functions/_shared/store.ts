@@ -123,6 +123,25 @@ export async function upsertFeedItems(sb: any, dailyFeed: SignalItem[], fetchedA
     trend_entities: i.trend_entities,
     ranking_reason: i.ranking_reason,
     fetched_at: fetchedAt,
+    // Phase 4 · Module 1 — explainable scoring layer (additive; never affects
+    // ranking). Populated by buildScoreBreakdown() in the publish stage.
+    score_factors: (i as any).score_factors ?? [],
+    freshness_score: (i as any).freshness_score ?? null,
+    confidence_band: (i as any).confidence_band ?? null,
+    developer_value: (i as any).developer_value ?? null,
+    founder_value: (i as any).founder_value ?? null,
+    investor_value: (i as any).investor_value ?? null,
+    learning_value: (i as any).learning_value ?? null,
+    // Phase 4 · Module 2 — explainable source quality (additive).
+    source_quality: (i as any).source_quality ?? {},
+    // Phase 4 · Module 8 — merged rule intelligence (additive).
+    rule_intelligence: (i as any).rule_intelligence ?? {},
+    matched_rules: (i as any).matched_rules ?? [],
+    // Phase 4 · Module 4 — cached opportunity intelligence (additive). Distinct
+    // from the existing `opportunity` text column (editorial sentence) — this is
+    // the structured object in `opportunity_intel`.
+    opportunity_intel: (i as any).opportunity_intel ?? {},
+    opportunity_type: (i as any).opportunity_type ?? null,
   }));
   // Idempotent + retried. Returns the PostgREST result so callers can gate
   // the prune (only delete old rows once the new batch landed).
