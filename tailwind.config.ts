@@ -52,7 +52,7 @@ export default {
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
-        "fade-up": "fade-up 0.5s cubic-bezier(0.2, 0, 0, 1) both",
+        "fade-up": "fade-up 0.26s cubic-bezier(0.22, 1, 0.36, 1) both",
         "bounce-sm": "bounce-sm 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
         "slide-down": "slide-down 0.3s cubic-bezier(0.2, 0, 0, 1) both",
       },

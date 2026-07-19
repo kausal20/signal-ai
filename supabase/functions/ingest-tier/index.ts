@@ -10,6 +10,7 @@ import { dedupeByCanonicalUrl, rejectRaw } from "../_shared/cluster.ts";
 import { storeRawItems, updateSourceHealth, loadDisabledSources } from "../_shared/store.ts";
 import { acquireLock, releaseLock } from "../_shared/reliability.ts";
 import { Logger } from "../_shared/logger.ts";
+import { requireAdmin } from "../_shared/admin_auth.ts";
 import type { RawItem, SourceTier } from "../_shared/types.ts";
 
 const corsHeaders = {
@@ -22,6 +23,9 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const adminError = requireAdmin(req, corsHeaders);
+  if (adminError) return adminError;
+
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   const runStart = Date.now();
 
@@ -119,7 +123,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     logger.error("ingest_crashed", { message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined });
     await logger.flush();
-    return new Response(JSON.stringify({ error: String(e), tier }), {
+    return new Response(JSON.stringify({ error: "internal error", tier }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } finally {

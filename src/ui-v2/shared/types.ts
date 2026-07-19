@@ -43,6 +43,22 @@ export interface Signal {
   takeaway?: string;      // one-line "why it matters"
   critical?: boolean;
   saved?: boolean;
+  // Structured editorial content for the Top Story card (grounded, from the feed).
+  whatHappened?: string;   // concrete "what happened"
+  affected?: string;       // who is affected (comma/space separated groups)
+  category?: string;
+  // Source attribution (consumed from the original article; never fabricated).
+  url?: string;            // original article URL (real publisher article)
+  domain?: string;         // e.g. "openai.com"
+  publishedAt?: string;    // ISO timestamp of original publication
+  verified?: boolean;      // recognized/official publisher
+  // Entity-search metadata (present only for entity queries).
+  // section: official | analysis | review | comparison | tutorial | benchmark
+  //          | list | repo | opinion | mentioned
+  section?: string;
+  contentType?: string;             // news | funding | launch | tutorial | repo | …
+  eventType?: string;               // launch | funding | acquisition | … | none
+  isOfficial?: boolean;             // genuine company event (Official Company News)
 }
 
 /** The single Advisor recommendation of the day. */

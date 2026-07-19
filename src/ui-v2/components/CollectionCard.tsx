@@ -49,8 +49,9 @@ export function CollectionCard({ collection, onClick, className }: Props) {
         transform: `perspective(600px) rotateY(${tilt.x}deg) rotateX(${tilt.y}deg) translateY(${tilt.x !== 0 ? '-2px' : '0'})`,
         transformStyle: 'preserve-3d',
         boxShadow: tilt.x !== 0
-          ? '0 16px 40px -12px hsl(152 72% 48% / 0.1), 0 8px 20px -8px hsl(0 0% 0% / 0.4)'
+          ? '0 16px 40px -12px hsl(152 72% 48% / 0.12), 0 8px 20px -8px hsl(0 0% 0% / 0.4), 0 0 0 1px hsl(152 72% 48% / 0.06)'
           : 'none',
+        animation: prefersReducedMotion() ? 'none' : 'motion-float-y 8s ease-in-out infinite',
       }}
     >
       {/* Ambient glow */}

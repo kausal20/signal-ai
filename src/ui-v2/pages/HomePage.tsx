@@ -1,22 +1,29 @@
 // signal-ui-v2 · pages/HomePage.tsx
 // ---------------------------------------------------------------------------
-// Home / daily briefing. Pure layout: every list comes from props. Renders a
-// live pulse, a hero recommendation, a swipeable brief rail, a numbered
-// top-signals list, category tabs, and the quiet feed.
+// Home — a premium AI NEWS HUB. Answers one question: "What happened today?"
 //
-// Replaces production: pages/Index.tsx body + HeroOpportunity + DailyBrief +
-// TopSignals + FeedCard list + CategoryTabs.
+// Presentation order:
+//   1. Updated just now (live)      2. Welcome back
+//   3. Top Story (one featured)     4. Category filters
+//   5. Today's Brief (swipe)        6. Latest Stories (chronological)
+//   7. You're all caught up
+//
+// Recommendation / learning / opportunity / advisor content lives on the
+// Advisor page — it is intentionally NOT rendered here. This is a
+// presentation-only reorganisation: Props, data sources, handlers, routing,
+// navigation and feed logic are all unchanged. `hero`, `project` and their
+// handlers remain in the Props contract (passed by Index) but are not shown.
 // ---------------------------------------------------------------------------
-import { useEffect, useState } from "react";
-import { Check, ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronRight, Bookmark, ArrowRight, Clock } from "lucide-react";
 import { motion as fm, useReducedMotion, useScroll, useTransform, type Variants } from "framer-motion";
+import { staggerContainer as container, motionTokens } from "../animations/motion";
 import { ScreenShell } from "../layouts/ScreenShell";
 import { BottomNav } from "../layouts/BottomNav";
 import { LivePulse } from "../components/LivePulse";
 import { SectionHeader } from "../components/SectionHeader";
-import { RecommendationCard } from "../components/RecommendationCard";
-import { ProjectCard } from "../components/ProjectCard";
 import { FeedCard } from "../components/FeedCard";
+import { TopStoryCard } from "../components/TopStoryCard";
 import { SignalScoreChip } from "../components/SignalScoreRing";
 import { CountUp } from "../components/CountUp";
 import { BrandLogo } from "../icons/BrandLogo";
@@ -27,30 +34,20 @@ interface CategoryTab {
   label: string;
 }
 
-// Staggered entrance — sections cascade in on mount.
-const container: Variants = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.065, delayChildren: 0.04 } },
-};
-const item: Variants = {
-  hidden: { opacity: 0, y: 16 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.42, ease: [0.22, 1, 0.36, 1] } },
-};
-
 interface Props {
   profile: UserProfile;
   /** e.g. "4 things worth your time today · 6 min read". */
   briefSummary?: string;
   livePulseLabel?: React.ReactNode;
-  hero?: Recommendation;    // omitted when a filtered category has no top pick
+  hero?: Recommendation;    // opportunity — Advisor page only; not rendered here
   emptyLabel?: string;      // shown when nothing matches the active category
   brief: Signal[];          // swipeable rail
-  topSignals: Signal[];     // numbered list
-  feed: Signal[];           // quiet cards
+  topSignals: Signal[];     // ranked stories (source of Top Story + Latest)
+  feed: Signal[];           // quiet cards (rest of Latest)
   categories?: CategoryTab[];
   activeCategory?: string;
   bookmarkCount?: number;
-  /** "Continue Building" — omitted when there is no active project. */
+  /** "Continue Building" — Advisor page only; not rendered here. */
   project?: Project | null;
 
   onNavigate?: (s: SectionKey) => void;
@@ -63,254 +60,179 @@ interface Props {
   onContinueProject?: (id: string) => void;
 }
 
+// ── Motion (spec timings) ───────────────────────────────────────────────────
+const EASE = motionTokens.ease.premium;
+const fadeUp: Variants = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.22, ease: EASE } } };
+const topStoryV: Variants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: EASE } } };
+const chipRow: Variants = { hidden: {}, show: { transition: { staggerChildren: 0.04, delayChildren: 0.02 } } };
+const chipItem: Variants = { hidden: { opacity: 0, x: -12 }, show: { opacity: 1, x: 0, transition: { duration: 0.22, ease: EASE } } };
+const briefRow: Variants = { hidden: {}, show: { transition: { staggerChildren: 0.06 } } };
+
+// Estimate reading time from the copy we actually have (~120 wpm on snippets).
+function readMins(s: Signal): number {
+  const words = `${s.title} ${s.takeaway ?? ""}`.trim().split(/\s+/).length;
+  return Math.max(1, Math.round(words / 120));
+}
+
 export function HomePage({
   profile, briefSummary, livePulseLabel = "3 critical signals in the last hour",
-  hero, emptyLabel, brief, topSignals, feed, categories = [], activeCategory,
-  bookmarkCount = 0, project, onNavigate, onOpenProfile, onSelectCategory,
-  onOpenSignal, onToggleSave, onStartHero, onToggleHeroSave, onContinueProject,
+  emptyLabel, brief, topSignals, feed, categories = [], activeCategory,
+  bookmarkCount = 0, onNavigate, onOpenProfile, onSelectCategory,
+  onOpenSignal, onToggleSave,
 }: Props) {
-  const nothingToShow = !hero && brief.length === 0 && topSignals.length === 0 && feed.length === 0;
   const reduce = useReducedMotion();
   const anim = reduce
-    ? { initial: undefined, animate: undefined, variants: undefined }
+    ? { initial: undefined, animate: undefined }
     : { initial: "hidden" as const, animate: "show" as const };
-  // When reduced-motion is on, don't apply the stagger `hidden` variant to
-  // children (they'd stay at opacity 0 since we skip the animate transition).
-  const V = reduce ? undefined : item;
 
-  // Scroll-driven collapse: the greeting shrinks + the profile chip snaps to
-  // the top edge as the user scrolls, freeing space for the feed.
+  // Scroll-driven collapse: greeting shrinks + subtitle fades as the feed rises.
   const [scrollEl, setScrollEl] = useState<HTMLElement | null>(null);
   const { scrollY } = useScroll({ container: scrollEl ? { current: scrollEl } as any : undefined });
   const greetingScale = useTransform(scrollY, [0, 90], [1, 0.78]);
   const greetingY = useTransform(scrollY, [0, 90], [0, -8]);
   const subOpacity = useTransform(scrollY, [0, 60], [1, 0]);
-  const critical =
-    typeof livePulseLabel === "string"
-      ? Number((livePulseLabel.match(/(\d+)/) ?? [])[1] ?? NaN)
-      : NaN;
-
-  const header = (
-    <div className="relative">
-      {/* Ambient glow behind the greeting — softly breathes. */}
-      {!reduce && (
-        <fm.div
-          aria-hidden
-          className="pointer-events-none absolute -top-8 left-1/2 -z-10 h-40 w-[80%] -translate-x-1/2 rounded-full bg-green/[0.10] blur-3xl"
-          animate={{ opacity: [0.25, 0.55, 0.25] }}
-          transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut" }}
-        />
-      )}
-      <div className="bg-[linear-gradient(to_bottom,hsl(0_0%_3%/0.96)_60%,transparent)] px-[22px] pb-3.5 pt-[52px] backdrop-blur">
-        <div className="mb-3.5 flex items-center justify-between">
-          <LivePulse bare label="Updated just now" />
-          <fm.button
-            type="button"
-            onClick={onOpenProfile}
-            aria-label="Open profile"
-            whileTap={{ scale: 0.9 }}
-            whileHover={reduce ? undefined : { scale: 1.06 }}
-            className="flex h-[34px] w-[34px] items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.05] text-[13px] font-bold text-green"
-          >
-            {profile.initials ?? profile.name.slice(0, 1).toUpperCase()}
-          </fm.button>
-        </div>
-        <fm.h1
-          style={reduce ? undefined : { scale: greetingScale, y: greetingY, transformOrigin: "left top" }}
-          className="text-[25px] font-extrabold tracking-[-0.025em] text-foreground"
-        >
-          Welcome back, <span className="text-green">{profile.name.split(" ")[0]}</span>
-        </fm.h1>
-        {briefSummary && (
-          <fm.p
-            style={reduce ? undefined : { opacity: subOpacity }}
-            className="mt-1 text-[13px] text-muted-foreground"
-          >
-            {briefSummary}
-          </fm.p>
-        )}
-      </div>
-    </div>
-  );
-
-  // Hook the ScreenShell scroll container so scroll-linked motion fires.
   useEffect(() => {
     const el = document.querySelector<HTMLElement>("[data-home-scroll]");
     if (el) setScrollEl(el);
   }, []);
 
+  const critical =
+    typeof livePulseLabel === "string"
+      ? Number((livePulseLabel.match(/(\d+)/) ?? [])[1] ?? NaN)
+      : NaN;
+  const isAll = !activeCategory || activeCategory === "all";
+
+  // ── TOP STORY — exactly one, frozen to the "All" view so category filters
+  // never change it (spec: "Do not affect Top Story"). ─────────────────────
+  const topStoryRef = useRef<Signal | null>(null);
+  const topCandidate = topSignals[0] ?? brief[0] ?? feed[0] ?? null;
+  if (isAll && topCandidate) topStoryRef.current = topCandidate;
+  const topStory = isAll ? topCandidate : (topStoryRef.current ?? topCandidate);
+
+  const categoryLabel = (tag: string) => categories.find((c) => c.id === tag)?.label ?? tag;
+
+  // ── TODAY'S BRIEF — 4–8 highlights, minus the Top Story. ──────────────────
+  const briefCards = useMemo(
+    () => brief.filter((s) => s.id !== topStory?.id).slice(0, 8),
+    [brief, topStory?.id],
+  );
+
+  // ── LATEST STORIES — the main chronological feed. Deduped by id; the Top
+  // Story is removed so it never repeats at the very top. (Brief is a separate
+  // horizontal scan rail, so its highlights may still appear in the full feed.)
+  const latest = useMemo(() => {
+    const seen = new Set<string>();
+    if (topStory) seen.add(topStory.id);
+    const out: Signal[] = [];
+    for (const s of [...topSignals, ...feed]) {
+      if (seen.has(s.id)) continue;
+      seen.add(s.id);
+      out.push(s);
+    }
+    return out;
+  }, [topSignals, feed, topStory]);
+
+  const nothingToShow = !topStory && briefCards.length === 0 && latest.length === 0;
+
+  // ── SECTIONS 1 + 2 — Updated just now · Welcome back ──────────────────────
+  const header = (
+    <div className="relative">
+      {!reduce && (
+        <fm.div
+          aria-hidden
+          className="pointer-events-none absolute -top-8 left-1/2 -z-10 h-40 w-[80%] -translate-x-1/2 rounded-full bg-green/[0.10] blur-3xl"
+          animate={{ opacity: [0.25, 0.5, 0.25] }}
+          transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut" }}
+        />
+      )}
+      <div className="bg-[linear-gradient(to_bottom,hsl(0_0%_3%/0.96)_60%,transparent)] px-4 pb-3.5 pt-[52px] backdrop-blur sm:px-5 lg:px-6">
+        <div className="mx-auto w-full max-w-[920px]">
+          <div className="mb-3.5 flex items-center justify-between">
+            <LivePulse bare label="Updated just now" />
+            <fm.button
+              type="button"
+              onClick={onOpenProfile}
+              aria-label="Open profile"
+              whileTap={reduce ? undefined : { scale: 0.9 }}
+              whileHover={reduce ? undefined : { scale: 1.06 }}
+              className="flex h-[34px] w-[34px] items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.05] text-[13px] font-bold text-green"
+            >
+              {profile.initials ?? profile.name.slice(0, 1).toUpperCase()}
+            </fm.button>
+          </div>
+          <fm.h1
+            style={reduce ? undefined : { scale: greetingScale, y: greetingY, transformOrigin: "left top" }}
+            className="text-[25px] font-extrabold tracking-[-0.025em] text-foreground"
+          >
+            Welcome back, <span className="text-green">{profile.name.split(" ")[0]}</span>
+          </fm.h1>
+          {briefSummary && (
+            <fm.p
+              style={reduce ? undefined : { opacity: subOpacity }}
+              className="mt-1 text-[13px] text-muted-foreground"
+            >
+              {briefSummary}
+            </fm.p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <ScreenShell header={header} footer={<BottomNav active="home" bookmarkCount={bookmarkCount} onNavigate={onNavigate} />} bodyClassName="px-[22px] pb-24 pt-1.5" data-home-scroll>
-      <fm.div variants={reduce ? undefined : container} {...anim}>
-        <fm.div variants={V}>
-          <LivePulse
-            className="mb-6"
-            label={
-              Number.isFinite(critical) ? (
-                <>
-                  <CountUp value={critical as number} duration={900} className="font-mono-tight font-bold text-foreground/90" />{" "}
-                  critical signal{critical === 1 ? "" : "s"} today
-                </>
-              ) : (
-                livePulseLabel
-              )
-            }
-          />
-        </fm.div>
+    <ScreenShell
+      header={header}
+      footer={<BottomNav active="home" bookmarkCount={bookmarkCount} onNavigate={onNavigate} />}
+      bodyClassName="px-4 pb-28 pt-2 sm:px-5 lg:px-6"
+      data-home-scroll
+    >
+      <div className="mx-auto flex w-full max-w-[920px] flex-col gap-8">
+        {/* live count line */}
+        <LivePulse
+          className="-mb-1"
+          label={
+            Number.isFinite(critical) ? (
+              <>
+                <CountUp value={critical as number} duration={900} className="font-mono-tight font-bold text-foreground/90" />{" "}
+                critical signal{critical === 1 ? "" : "s"} today
+              </>
+            ) : (
+              livePulseLabel
+            )
+          }
+        />
 
-        {/* HERO — bigger, edge-to-edge halo + slow breathing so it feels alive */}
-        {hero && (
-          <fm.section variants={V} className="mb-8">
-            <SectionHeader title="Today's best opportunity" />
-            <div className="relative -mx-[22px] px-[22px]">
-              {!reduce && (
-                <>
-                  {/* wide green halo bleeding past the card */}
-                  <fm.div
-                    aria-hidden
-                    className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[110%] bg-[radial-gradient(80%_60%_at_50%_30%,hsl(152_72%_48%/0.22),transparent_70%)]"
-                    animate={{ opacity: [0.55, 0.85, 0.55] }}
-                    transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-                  />
-                  {/* subtle rotating conic sheen */}
-                  <fm.div
-                    aria-hidden
-                    className="pointer-events-none absolute inset-4 -z-10 rounded-[28px] opacity-30 blur-2xl"
-                    style={{ background: "conic-gradient(from 0deg, hsl(152 72% 48% / 0.20), transparent 40%, hsl(152 72% 48% / 0.15))" }}
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 22, repeat: Infinity, ease: "linear" }}
-                  />
-                </>
-              )}
-              <fm.div
-                whileHover={reduce ? undefined : { y: -2 }}
-                transition={{ type: "spring", stiffness: 300, damping: 22 }}
-              >
-                <RecommendationCard
-                  recommendation={hero}
-                  eyebrow="Build opportunity"
-                  onStart={onStartHero}
-                  onToggleSave={onToggleHeroSave}
-                />
-              </fm.div>
-            </div>
+        {/* ═══ SECTION 3 · TOP STORY ═══ */}
+        {topStory && (
+          <fm.section variants={reduce ? undefined : topStoryV} {...anim} aria-label="Top story">
+            <SectionHeader title="Top Story" />
+            <TopStoryCard signal={topStory} onOpen={onOpenSignal} onToggleSave={onToggleSave} />
           </fm.section>
         )}
 
-        {/* CONTINUE BUILDING — only when there's an active project */}
-        {project && (
-          <fm.section variants={V} className="mb-7">
-            <SectionHeader title="Continue building" />
-            <ProjectCard project={project} onContinue={onContinueProject} />
-          </fm.section>
-        )}
-
-        {/* BRIEF RAIL — 3D press + subtle peek of the next card so it invites swiping */}
-        {brief.length > 0 && (
-          <fm.section variants={V} className="mb-8">
-            <SectionHeader title="Today's brief · swipe" action={<span className="text-[10px] font-semibold text-muted-foreground/70">{brief.length}</span>} />
-            <div className="no-scrollbar -mx-[22px] flex snap-x snap-mandatory gap-2.5 overflow-x-auto px-[22px] pb-1 [scroll-padding:22px]">
-              {brief.map((s, i) => (
-                <fm.button
-                  key={s.id}
-                  type="button"
-                  onClick={() => onOpenSignal?.(s.id)}
-                  whileTap={{ scale: 0.94, rotateX: 4 }}
-                  whileHover={reduce ? undefined : { y: -4, boxShadow: "0 14px 40px hsl(152 72% 48% / 0.18)" }}
-                  transition={{ type: "spring", stiffness: 320, damping: 22 }}
-                  style={{ transformStyle: "preserve-3d", transformPerspective: 600 }}
-                  variants={V}
-                  custom={i}
-                  className="w-[178px] shrink-0 snap-start rounded-2xl border border-white/[0.07] bg-white/[0.035] p-3.5 text-left"
-                >
-                  <div className="mb-2.5 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 font-mono-tight text-[9px] font-bold tracking-[0.12em] text-green">
-                      {s.sourceKey && <BrandLogo source={s.sourceKey} name={s.source} size={12} />}
-                      {s.source}
-                    </span>
-                    <SignalScoreChip score={s.score} />
-                  </div>
-                  <div className="text-[13px] font-semibold leading-snug text-foreground/90 line-clamp-3">{s.title}</div>
-                </fm.button>
-              ))}
-              {/* trailing arrow hint */}
-              <div className="flex w-6 shrink-0 snap-end items-center text-muted-foreground/40">
-                <ChevronRight className="h-4 w-4" />
-              </div>
-            </div>
-          </fm.section>
-        )}
-
-        {/* TOP SIGNALS — vertical NUMBERED TIMELINE connecting the ranked stories */}
-        {topSignals.length > 0 && (
-          <fm.section variants={V} className="mb-8">
-            <SectionHeader title="Top signals" />
-            <div className="relative">
-              {/* the vertical spine */}
-              <div className="pointer-events-none absolute left-[13px] top-2 bottom-2 w-px bg-gradient-to-b from-green/50 via-white/[0.06] to-transparent" />
-              {topSignals.map((s, i) => (
-                <fm.button
-                  key={s.id}
-                  type="button"
-                  onClick={() => onOpenSignal?.(s.id)}
-                  whileTap={{ scale: 0.985 }}
-                  whileHover={reduce ? undefined : { x: 4 }}
-                  transition={{ type: "spring", stiffness: 340, damping: 24 }}
-                  className="group relative flex w-full items-start gap-3 py-[14px] pl-9 pr-1 text-left"
-                >
-                  {/* node dot on the spine */}
-                  <fm.span
-                    aria-hidden
-                    className="absolute left-[6px] top-[18px] flex h-[15px] w-[15px] items-center justify-center rounded-full border border-green/40 bg-background"
-                    animate={reduce ? undefined : { boxShadow: [
-                      "0 0 0 0 hsl(152 72% 48% / 0.45)",
-                      "0 0 0 6px hsl(152 72% 48% / 0)",
-                    ] }}
-                    transition={{ duration: 2.2, repeat: Infinity, ease: "easeOut", delay: i * 0.35 }}
-                  >
-                    <span className="h-[6px] w-[6px] rounded-full bg-green shadow-[0_0_6px_hsl(152_72%_52%)]" />
-                  </fm.span>
-                  {/* rank */}
-                  <span className="absolute left-6 top-[10px] font-mono-tight text-[10px] font-bold text-white/25">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <div className="min-w-0 flex-1 border-b border-white/[0.05] pb-[14px] pt-3 group-last:border-b-0">
-                    <div className="mb-1 flex items-center gap-1.5">
-                      <span className="flex items-center gap-1.5 font-mono-tight text-[9px] font-bold tracking-[0.12em] text-green">
-                        {s.sourceKey && <BrandLogo source={s.sourceKey} name={s.source} size={12} />}
-                        {s.source}
-                      </span>
-                      {s.timeAgo && (
-                        <>
-                          <span className="h-[2.5px] w-[2.5px] rounded-full bg-white/25" />
-                          <span className="text-[9px] font-semibold text-muted-foreground">{s.timeAgo}</span>
-                        </>
-                      )}
-                    </div>
-                    <div className="text-sm font-semibold leading-snug text-foreground/95">{s.title}</div>
-                  </div>
-                  <span className="mt-3 shrink-0 font-mono-tight text-[13px] font-bold text-green">
-                    <CountUp value={s.score} duration={800 + i * 120} />
-                  </span>
-                </fm.button>
-              ))}
-            </div>
-          </fm.section>
-        )}
-
-        {/* CATEGORY TABS — animated active pill with shared layoutId */}
+        {/* ═══ SECTION 4 · CATEGORY FILTERS ═══ */}
         {categories.length > 0 && (
-          <fm.div variants={V} className="no-scrollbar -mx-[22px] mb-4 flex gap-2 overflow-x-auto px-[22px]">
+          <fm.div
+            variants={reduce ? undefined : chipRow}
+            {...anim}
+            className="no-scrollbar -mx-4 flex gap-2.5 overflow-x-auto px-4 sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6"
+            role="group"
+            aria-label="Filter categories"
+          >
             {categories.map((c) => {
               const on = c.id === activeCategory;
               return (
                 <fm.button
                   key={c.id}
                   type="button"
+                  variants={reduce ? undefined : chipItem}
+                  aria-pressed={on}
                   onClick={() => onSelectCategory?.(c.id)}
-                  whileTap={{ scale: 0.92 }}
-                  className={`relative shrink-0 whitespace-nowrap rounded-full border px-4 py-2 text-[12.5px] font-semibold transition-colors ${
-                    on ? "border-green text-black" : "border-white/[0.08] text-muted-foreground"
+                  whileHover={reduce ? undefined : { scale: 1.03 }}
+                  whileTap={reduce ? undefined : { scale: 0.97 }}
+                  transition={{ type: "spring", stiffness: 380, damping: 24 }}
+                  className={`relative flex h-[38px] shrink-0 items-center whitespace-nowrap rounded-full border px-4 text-[12.5px] font-semibold transition-colors ${
+                    on ? "border-green text-black" : "border-white/[0.08] text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {on && (
@@ -327,35 +249,118 @@ export function HomePage({
           </fm.div>
         )}
 
-        {/* QUIET FEED — staggered cards */}
-        {feed.length > 0 && (
-          <fm.div variants={V}>
-            <SectionHeader title="Today's feed" />
-            <fm.div variants={container} className="flex flex-col gap-2.5">
-              {feed.map((s) => (
-                <fm.div key={s.id} variants={V}>
-                  <FeedCard signal={s} onOpen={onOpenSignal} onToggleSave={onToggleSave} />
-                </fm.div>
+        {/* ═══ SECTION 5 · TODAY'S BRIEF (swipe) ═══ */}
+        {briefCards.length > 0 && (
+          <section aria-label="Today's brief">
+            <SectionHeader
+              title="Today's Brief"
+              action={<span className="text-[10px] font-semibold text-muted-foreground/70">{briefCards.length}</span>}
+            />
+            <fm.div
+              variants={reduce ? undefined : briefRow}
+              {...anim}
+              className="no-scrollbar -mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-1 [scroll-padding:16px] sm:-mx-5 sm:px-5 lg:-mx-6 lg:px-6"
+            >
+              {briefCards.map((s) => (
+                <fm.button
+                  key={s.id}
+                  type="button"
+                  variants={reduce ? undefined : fadeUp}
+                  onClick={() => onOpenSignal?.(s.id)}
+                  whileHover={reduce ? undefined : { y: -4 }}
+                  whileTap={reduce ? undefined : { scale: 0.97 }}
+                  transition={{ type: "spring", stiffness: 320, damping: 22 }}
+                  className="flex h-[170px] w-[280px] shrink-0 snap-start flex-col justify-between rounded-2xl border border-white/[0.07] bg-white/[0.035] p-4 text-left"
+                >
+                  <div>
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 font-mono-tight text-[9.5px] font-bold tracking-[0.12em] text-green">
+                        {s.sourceKey && <BrandLogo source={s.sourceKey} name={s.source} size={12} />}
+                        {s.source}
+                      </span>
+                      <SignalScoreChip score={s.score} />
+                    </div>
+                    <div className="text-[14px] font-bold leading-snug text-foreground line-clamp-2">{s.title}</div>
+                    {s.takeaway && (
+                      <div className="mt-1 text-[11.5px] leading-snug text-muted-foreground line-clamp-2">{s.takeaway}</div>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between text-[10.5px] text-muted-foreground">
+                    <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{readMins(s)} min read</span>
+                    <fm.span
+                      role="button"
+                      tabIndex={0}
+                      aria-label={s.saved ? "Remove bookmark" : "Bookmark"}
+                      onClick={(e) => { e.stopPropagation(); onToggleSave?.(s.id); }}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); onToggleSave?.(s.id); } }}
+                      whileTap={reduce ? undefined : { scale: 0.85 }}
+                      className="flex h-6 w-6 items-center justify-center rounded-full hover:text-green"
+                    >
+                      <Bookmark className={`h-3.5 w-3.5 ${s.saved ? "fill-green text-green" : ""}`} />
+                    </fm.span>
+                  </div>
+                </fm.button>
               ))}
+              <div className="flex w-6 shrink-0 snap-end items-center text-muted-foreground/40">
+                <ChevronRight className="h-4 w-4" />
+              </div>
             </fm.div>
-          </fm.div>
+          </section>
         )}
 
+        {/* ═══ SECTION 6 · LATEST STORIES (chronological) ═══ */}
+        {latest.length > 0 && (
+          <section aria-label="Latest stories">
+            <SectionHeader title="Latest Stories" />
+            <div className="relative">
+              {/* timeline spine */}
+              <div className="pointer-events-none absolute left-[6px] top-3 bottom-3 w-px bg-gradient-to-b from-green/40 via-white/[0.06] to-transparent" />
+              <fm.div variants={reduce ? undefined : container} {...anim} className="flex flex-col">
+                {latest.map((s) => (
+                  <fm.div key={s.id} variants={reduce ? undefined : fadeUp} className="relative pl-6">
+                    {/* timeline node */}
+                    <span aria-hidden className="absolute left-[3px] top-[26px] h-[7px] w-[7px] rounded-full border border-green/50 bg-background">
+                      <span className="absolute inset-[1.5px] rounded-full bg-green/70" />
+                    </span>
+                    <div className="border-b border-white/[0.05]">
+                      <FeedCard signal={s} onOpen={onOpenSignal} onToggleSave={onToggleSave} />
+                    </div>
+                  </fm.div>
+                ))}
+              </fm.div>
+            </div>
+          </section>
+        )}
+
+        {/* ═══ SECTION 7 · YOU'RE ALL CAUGHT UP ═══ */}
         {nothingToShow ? (
-          <fm.div variants={V} className="flex flex-col items-center px-6 py-16 text-center">
+          <div className="flex flex-col items-center px-6 py-16 text-center">
             <p className="text-[13.5px] font-bold text-foreground">{emptyLabel ?? "Nothing here yet"}</p>
             <p className="text-[11.5px] text-muted-foreground">Try another category.</p>
-          </fm.div>
+          </div>
         ) : (
-          <fm.div variants={V} className="flex flex-col items-center px-6 py-9 text-center">
-            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full border border-green/[0.22] bg-green/10 text-green">
-              <Check className="h-5 w-5" />
-            </div>
+          <div className="flex flex-col items-center px-6 py-10 text-center">
+            <fm.div
+              initial={reduce ? undefined : { scale: 0.6, opacity: 0 }}
+              whileInView={reduce ? undefined : { scale: 1, opacity: 1 }}
+              viewport={{ once: true, amount: 0.6 }}
+              transition={{ type: "spring", stiffness: 300, damping: 16 }}
+              className="mb-3 flex h-11 w-11 items-center justify-center rounded-full border border-green/[0.22] bg-green/10 text-green"
+            >
+              <fm.span
+                initial={reduce ? undefined : { pathLength: 0, opacity: 0 }}
+                whileInView={reduce ? undefined : { pathLength: 1, opacity: 1 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.35, ease: EASE, delay: 0.12 }}
+              >
+                <Check className="h-5 w-5" />
+              </fm.span>
+            </fm.div>
             <p className="text-[13.5px] font-bold text-foreground">You're all caught up</p>
-            <p className="text-[11.5px] text-muted-foreground">We'll ping you when something big breaks.</p>
-          </fm.div>
+            <p className="text-[11.5px] text-muted-foreground">We'll notify you when something important happens.</p>
+          </div>
         )}
-      </fm.div>
+      </div>
     </ScreenShell>
   );
 }

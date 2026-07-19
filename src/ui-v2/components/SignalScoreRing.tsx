@@ -1,11 +1,10 @@
 // signal-ui-v2 · components/SignalScoreRing.tsx
 // ---------------------------------------------------------------------------
-// Signature metric: the Signal Score as an animated circular ring. This mirrors
-// your production `components/SignalScoreRing.tsx` API (score / size / showLabel)
-// so it is a DROP-IN REPLACEMENT, and adds a `caption` prop for the Advisor
-// "conviction" ring. Animation is pure CSS/RAF and honors reduced motion.
+// Signature metric: the Signal Score as an animated circular ring with viewport
+// triggered fill, glow filter pulse on the stroke, and smooth count-up.
 // ---------------------------------------------------------------------------
 import { useEffect, useRef, useState } from "react";
+import { useInView, useReducedMotion } from "framer-motion";
 import { clamp, prefersReducedMotion } from "@/lib/utils";
 
 interface Props {
@@ -29,11 +28,20 @@ export function SignalScoreRing({ score, size = 56, showLabel = false, caption, 
   const stroke = Math.max(3, Math.round(size * 0.08));
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
+  const reduce = useReducedMotion();
+
+  // Viewport trigger — only animate when visible
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isInView = useInView(containerRef, { once: true, amount: 0.5 });
 
   const [shown, setShown] = useState(prefersReducedMotion() ? clamped : 0);
   const raf = useRef<number | null>(null);
+
   useEffect(() => {
-    if (prefersReducedMotion()) { setShown(clamped); return; }
+    if (prefersReducedMotion() || reduce) { setShown(clamped); return; }
+    // Wait for viewport visibility
+    if (!isInView) return;
+
     const start = performance.now();
     const dur = 750;
     const tick = (t: number) => {
@@ -44,12 +52,13 @@ export function SignalScoreRing({ score, size = 56, showLabel = false, caption, 
     };
     raf.current = requestAnimationFrame(tick);
     return () => { if (raf.current) cancelAnimationFrame(raf.current); };
-  }, [clamped]);
+  }, [clamped, isInView, reduce]);
 
   const offset = circ - (shown / 100) * circ;
 
   return (
     <div
+      ref={containerRef}
       className={`relative inline-flex items-center justify-center ${className}`}
       style={{ width: size, height: size }}
       role="img"
@@ -61,8 +70,9 @@ export function SignalScoreRing({ score, size = 56, showLabel = false, caption, 
           cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
           strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset}
           style={{
-            transition: prefersReducedMotion() ? "none" : "stroke-dashoffset 80ms linear",
-            filter: "drop-shadow(0 0 5px hsl(152 72% 48% / 0.5))",
+            transition: prefersReducedMotion() || reduce ? "none" : "stroke-dashoffset 80ms linear",
+            filter: prefersReducedMotion() || reduce ? "none" : "drop-shadow(0 0 5px hsl(152 72% 48% / 0.5))",
+            animation: prefersReducedMotion() || reduce ? "none" : "ring-glow-pulse 3s ease-in-out infinite",
           }}
         />
       </svg>

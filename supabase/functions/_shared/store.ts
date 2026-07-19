@@ -4,6 +4,8 @@
 import type { RawItem, StoryCluster, SignalItem, EditorialAudit } from "./types.ts";
 import { sourceUrlsFor } from "./cluster.ts";
 import { dbWrite } from "./reliability.ts";
+import { classifyContentType } from "./content_type.ts";
+import { classifyEditorial } from "./editorial.ts";
 
 const MAX_CONSECUTIVE_FAILURES = 3;
 // Exponential disable window per failure streak, capped (Phase 11 self-healing).
@@ -28,6 +30,53 @@ export async function storeRawItems(sb: any, rawItems: RawItem[], rejected: RawI
   if (rows.length === 0) return;
   // Idempotent upsert (onConflict id) wrapped with retry on transient DB errors.
   await dbWrite("raw_items.upsert", () => sb.from("raw_items").upsert(rows, { onConflict: "id" }));
+
+  // Content Archive: every VALIDATED (accepted, non-rejected) article also lands
+  // in the permanent searchable knowledge base — independent of whether it is
+  // later selected for the curated Home feed (feed_items). ignoreDuplicates keeps
+  // it idempotent and preserves entity_status of rows already processed, so the
+  // async entity processor never re-does completed work. Best-effort: never let
+  // an archive write failure block ingestion.
+  await archiveAcceptedItems(sb, rawItems);
+}
+
+// Mirror accepted raw items into content_archive (see 20260718090000_content_archive).
+export async function archiveAcceptedItems(sb: any, accepted: RawItem[]): Promise<void> {
+  if (!accepted || accepted.length === 0) return;
+  const rows = accepted.map((i) => {
+    const contentType = classifyContentType({ title: i.rawTitle, url: i.originalUrl ?? i.url, source: i.source, summary: i.rawText });
+    const editorial = classifyEditorial({ title: i.rawTitle, summary: i.rawText, contentType });
+    return {
+      id: i.id,
+      url: i.url,
+      canonical_url: i.canonicalUrl,
+      title: i.rawTitle,
+      summary: (i.rawText ?? "").slice(0, 500),
+      full_content: i.rawText ?? null,
+      source: i.source,
+      source_label: i.sourceLabel,
+      // Publisher (real site) + real article URL, distinct from the connector.
+      publisher: i.publisher ?? null,
+      publisher_domain: i.publisherDomain ?? null,
+      original_url: i.originalUrl ?? i.url,
+      // Content type + editorial judgement (drives entity-search sections).
+      content_type: contentType,
+      event_type: editorial.eventType,
+      editorial_quality_score: editorial.qualityScore,
+      is_official_company_news: editorial.isOfficialCompanyNews,
+      published_at: i.published_at,
+      language: "en",
+      entity_status: "pending",
+      embedding_status: "pending",
+      archive_status: "active",
+    };
+  });
+  try {
+    await dbWrite("content_archive.upsert", () =>
+      sb.from("content_archive").upsert(rows, { onConflict: "id", ignoreDuplicates: true }));
+  } catch (e) {
+    console.error("content_archive upsert", e);
+  }
 }
 
 export async function storeClusters(sb: any, clusters: StoryCluster[], items: SignalItem[]): Promise<void> {
@@ -150,18 +199,57 @@ export async function upsertFeedItems(sb: any, dailyFeed: SignalItem[], fetchedA
 }
 
 export async function pruneFeedItems(sb: any, fetchedAt: string): Promise<void> {
-  // Signal is a daily snapshot, not an infinite scroll. Anything older than
-  // this run was either replaced or expired; drop it.
-  await sb.from("feed_items").delete().lt("fetched_at", fetchedAt);
+  // Retention, not a wipe. Previously this deleted EVERY row from prior runs
+  // (`delete().lt("fetched_at", fetchedAt)`), which kept feed_items at ~4 rows
+  // and left Search with no archive to search. Older items are now retained and
+  // expire purely on article age, so the archive accumulates across runs.
+  //
   // Age-based expiry applies ONLY to rows from PRIOR runs (fetched_at < fetchedAt).
   // The current batch must never be pruned by article date — a curated story can
   // legitimately reference an older-dated paper/blog post and still belong in
   // today's feed. Without this guard the snapshot we just wrote is deleted on the
   // spot (the zero-stories-after-publish bug).
   const now = Date.now();
-  await sb.from("feed_items").delete().lt("fetched_at", fetchedAt).eq("tag", "news").lt("published_at", new Date(now - 48 * 3600_000).toISOString());
-  await sb.from("feed_items").delete().lt("fetched_at", fetchedAt).eq("tag", "tool").lt("published_at", new Date(now - 7 * 24 * 3600_000).toISOString());
-  await sb.from("feed_items").delete().lt("fetched_at", fetchedAt).eq("tag", "use-case").lt("published_at", new Date(now - 7 * 24 * 3600_000).toISOString());
+  const NEWS_RETENTION_DAYS = 30;
+  const EVERGREEN_RETENTION_DAYS = 90; // tools + use-cases stay useful far longer
+  await sb.from("feed_items").delete().lt("fetched_at", fetchedAt).eq("tag", "news").lt("published_at", new Date(now - NEWS_RETENTION_DAYS * 24 * 3600_000).toISOString());
+  await sb.from("feed_items").delete().lt("fetched_at", fetchedAt).eq("tag", "tool").lt("published_at", new Date(now - EVERGREEN_RETENTION_DAYS * 24 * 3600_000).toISOString());
+  await sb.from("feed_items").delete().lt("fetched_at", fetchedAt).eq("tag", "use-case").lt("published_at", new Date(now - EVERGREEN_RETENTION_DAYS * 24 * 3600_000).toISOString());
+  await sb.from("feed_items").delete().lt("fetched_at", fetchedAt).eq("tag", "prompt").lt("published_at", new Date(now - EVERGREEN_RETENTION_DAYS * 24 * 3600_000).toISOString());
+}
+
+// =====================================================================
+// Entity discovery — dynamic AI-entity registry (no hardcoded lists).
+// Persists extracted entities of every type (company, model, product, person,
+// lab, framework, …) + article links through the RPCs defined in
+// 20260718100000_entity_intelligence.sql. Both are best-effort: a discovery
+// failure must never block or roll back a published feed.
+// =====================================================================
+export interface EntityLink {
+  name: string;
+  type?: string;
+  aliases?: string[];
+  is_ai?: boolean;
+  confidence?: number;
+  mention_type?: string;
+}
+
+export async function linkArticleEntities(sb: any, articleId: string, entities: EntityLink[]): Promise<void> {
+  if (!entities || entities.length === 0) return;
+  const payload = entities.map((e) => ({
+    name: e.name,
+    type: e.type ?? "company",
+    aliases: e.aliases ?? [],
+    is_ai: e.is_ai ?? true,
+    confidence: e.confidence ?? 1.0,
+    mention_type: e.mention_type ?? "mentioned",
+  }));
+  await dbWrite("entity_links.rpc", () =>
+    sb.rpc("link_article_entities", { p_article_id: articleId, p_entities: payload }));
+}
+
+export async function refreshEntityMetrics(sb: any): Promise<void> {
+  await dbWrite("entity_metrics.refresh", () => sb.rpc("refresh_entity_metrics"));
 }
 
 // =====================================================================

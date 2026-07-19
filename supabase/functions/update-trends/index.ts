@@ -7,6 +7,7 @@ import { detectEntities, computeMomentum } from "../_shared/trends.ts";
 import { buildConceptEdges } from "../_shared/semantic.ts";
 import { reasonTrends, persistTrendIntelligence, computeAcceleration } from "../_shared/trend_intel.ts";
 import { CircuitBreaker } from "../_shared/reliability.ts";
+import { requireAdmin } from "../_shared/admin_auth.ts";
 import type { TrendEntity } from "../_shared/types.ts";
 
 const corsHeaders = {
@@ -16,10 +17,12 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const adminError = requireAdmin(req, corsHeaders);
+  if (adminError) return adminError;
+
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   const runStart = Date.now();
 
@@ -35,7 +38,8 @@ Deno.serve(async (req) => {
     .is("rejection_reason", null)
     .limit(8000);
   if (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error("update_trends_read_failed", error);
+    return new Response(JSON.stringify({ error: "internal error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -133,7 +137,7 @@ Deno.serve(async (req) => {
       .sort((a, b) => (b.entity.momentum + Math.abs(b.acceleration) * 20) - (a.entity.momentum + Math.abs(a.acceleration) * 20))
       .slice(0, 10);
     try {
-      const { insights } = await reasonTrends(inputs, LOVABLE_API_KEY, breaker);
+      const { insights } = await reasonTrends(inputs, breaker);
       await persistTrendIntelligence(sb, insights);
       trendsReasoned = insights.length;
     } catch (e) { console.error("reasonTrends", e); }

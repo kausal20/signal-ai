@@ -6,41 +6,25 @@
 // Reason ONCE per story, cache forever, reuse for every user. Falls back to the
 // V2 single-pass reasoner, then to the deterministic fallback.
 
-import { fetchWithTimeout } from "./text.ts";
+import { completeChat } from "./ai_provider.ts";
 import {
   reasonStory, fallbackStoryIntel, type StoryIntelligence,
 } from "./intelligence_v2.ts";
 import type { StoredStory } from "./intelligence_engine.ts";
 
-const GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const MODEL = "google/gemini-3-flash-preview";
-
-async function call(systemPrompt: string, tool: any, toolName: string, userObj: unknown, apiKey: string): Promise<any | null> {
-  let resp: Response | null = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      resp = await fetchWithTimeout(GATEWAY, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: JSON.stringify(userObj) },
-          ],
-          tools: [tool],
-          tool_choice: { type: "function", function: { name: toolName } },
-        }),
-      }, 30000);
-    } catch { resp = null; }
-    if (resp && resp.ok) break;
-    if (resp && resp.status !== 429 && resp.status < 500) break;
-    await new Promise((r) => setTimeout(r, 800 * Math.pow(2, attempt)));
-  }
-  if (!resp || !resp.ok) return null;
+async function call(systemPrompt: string, tool: any, toolName: string, userObj: unknown): Promise<any | null> {
+  const result = await completeChat<any>({
+    feature: "feed-agents",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: JSON.stringify(userObj) },
+    ],
+    tools: [tool],
+    toolChoice: { type: "function", function: { name: toolName } },
+  });
+  if (!result.success) return null;
   try {
-    const j = await resp.json();
-    const args = j.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
+    const args = result.data.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
     return args ? JSON.parse(args) : null;
   } catch { return null; }
 }
@@ -136,11 +120,10 @@ const synthesisTool = {
 export async function runAgentReasoning(
   story: StoredStory,
   trendContext: string,
-  apiKey: string,
   breaker?: { canAttempt: () => boolean },
 ): Promise<{ intel: StoryIntelligence; ok: boolean; degraded: boolean; agents: number }> {
   if (breaker && !breaker.canAttempt()) {
-    const fb = await reasonStory(story, trendContext, apiKey, breaker);
+    const fb = await reasonStory(story, trendContext, breaker);
     return { ...fb, agents: 0 };
   }
 
@@ -151,17 +134,17 @@ export async function runAgentReasoning(
     entities: story.trend_entities ?? [], trend_context: trendContext || "none",
   };
 
-  const analysts = await call(ANALYST_PROMPT, analystTool, "analyst_panel", storyInput, apiKey);
+  const analysts = await call(ANALYST_PROMPT, analystTool, "analyst_panel", storyInput);
   if (!analysts) {
     // graceful: fall back to single-pass V2 reasoning.
-    const fb = await reasonStory(story, trendContext, apiKey, breaker);
+    const fb = await reasonStory(story, trendContext, breaker);
     return { ...fb, agents: 0 };
   }
 
   const final = await call(SYNTHESIS_PROMPT, synthesisTool, "final_intelligence",
-    { story: storyInput, analyst_panel: analysts }, apiKey);
+    { story: storyInput, analyst_panel: analysts });
   if (!final) {
-    const fb = await reasonStory(story, trendContext, apiKey, breaker);
+    const fb = await reasonStory(story, trendContext, breaker);
     return { ...fb, agents: 1 };
   }
 

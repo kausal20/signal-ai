@@ -6,6 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { parseVector, toVectorLiteral } from "../_shared/embeddings.ts";
 import { kmeans } from "../_shared/collaborative.ts";
 import { acquireLock, releaseLock } from "../_shared/reliability.ts";
+import { requireAdmin } from "../_shared/admin_auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,6 +18,9 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const adminError = requireAdmin(req, corsHeaders);
+  if (adminError) return adminError;
+
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   const holder = crypto.randomUUID();
@@ -58,7 +62,8 @@ Deno.serve(async (req) => {
     await releaseLock(sb, "cluster-users");
     return new Response(JSON.stringify({ ok: true, users: users.length, clusters: clusterRows.length, k }, null, 2), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
+    console.error("cluster_users_crashed", e);
     await releaseLock(sb, "cluster-users");
-    return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: "internal error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });

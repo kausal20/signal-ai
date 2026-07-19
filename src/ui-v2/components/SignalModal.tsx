@@ -1,6 +1,12 @@
 // signal-ui-v2 · components/SignalModal.tsx
+// ---------------------------------------------------------------------------
+// Accessible modal with premium scale + blur entrance, backdrop fade, and
+// smooth exit animation via Framer Motion AnimatePresence.
+// ---------------------------------------------------------------------------
 import { useEffect } from "react";
+import { AnimatePresence, motion as fm, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { modalVariants, backdropVariants } from "../animations/motion";
 
 interface Props {
   open: boolean;
@@ -28,6 +34,8 @@ export function SignalModal({
   labelledBy,
   className,
 }: Props) {
+  const reduce = useReducedMotion();
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -35,32 +43,44 @@ export function SignalModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
-
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={labelledBy}
-      onClick={onClose}
-      className={cn(
-        "fixed inset-0 z-[80] flex bg-black/60 animate-fade-up",
-        variant === "sheet" ? "items-end justify-center" : "items-center justify-center p-5"
+    <AnimatePresence>
+      {open && (
+        <fm.div
+          key="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={labelledBy}
+          onClick={onClose}
+          variants={reduce ? undefined : backdropVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className={cn(
+            "fixed inset-0 z-[80] flex",
+            "bg-black/60 backdrop-blur-sm",
+            variant === "sheet" ? "items-end justify-center" : "items-center justify-center p-5"
+          )}
+        >
+          <fm.div
+            onClick={(e) => e.stopPropagation()}
+            variants={reduce ? undefined : modalVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className={cn(
+              "bg-[#101410] shadow-[0_30px_70px_hsl(0_0%_0%/0.6)]",
+              variant === "sheet"
+                ? "m-3.5 w-full rounded-3xl p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
+                : "w-full max-w-sm rounded-3xl p-6",
+              tone === "danger" ? "border border-[hsl(0_55%_50%/0.25)]" : "border border-white/[0.08]",
+              className
+            )}
+          >
+            {children}
+          </fm.div>
+        </fm.div>
       )}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className={cn(
-          "animate-scale-in bg-[#101410] shadow-[0_30px_70px_hsl(0_0%_0%/0.6)]",
-          variant === "sheet"
-            ? "m-3.5 w-full rounded-3xl p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
-            : "w-full max-w-sm rounded-3xl p-6",
-          tone === "danger" ? "border border-[hsl(0_55%_50%/0.25)]" : "border border-white/[0.08]",
-          className
-        )}
-      >
-        {children}
-      </div>
-    </div>
+    </AnimatePresence>
   );
 }

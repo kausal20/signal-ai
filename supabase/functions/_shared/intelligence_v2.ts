@@ -9,7 +9,7 @@
 // No regex topic-matching, no string templates: the model reasons about who
 // benefits/loses, which workflows die, and what each persona should DO.
 
-import { fetchWithTimeout } from "./text.ts";
+import { completeChat } from "./ai_provider.ts";
 import { dbWrite } from "./reliability.ts";
 import {
   detectOpportunities as detOppsFallback,
@@ -20,9 +20,6 @@ import {
 } from "./intelligence_engine.ts";
 import { defaultProfile } from "./profile.ts";
 import type { TrendEntity } from "./types.ts";
-
-const LOVABLE_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const MODEL = "google/gemini-3-flash-preview";
 
 export const PERSONAS_V2 = [
   "developer", "founder", "agency", "student",
@@ -232,7 +229,6 @@ const intelTool = [{
 export async function reasonStory(
   story: StoredStory,
   trendContext: string,
-  apiKey: string,
   breaker?: { canAttempt: () => boolean },
 ): Promise<{ intel: StoryIntelligence; ok: boolean; degraded: boolean }> {
   if (breaker && !breaker.canAttempt()) {
@@ -256,32 +252,19 @@ export async function reasonStory(
     },
   };
 
-  let resp: Response | null = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      resp = await fetchWithTimeout(LOVABLE_GATEWAY, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: JSON.stringify(userPayload) },
-          ],
-          tools: intelTool,
-          tool_choice: { type: "function", function: { name: "analyze_story" } },
-        }),
-      }, 30000);
-    } catch (_e) { resp = null; }
-    if (resp && resp.ok) break;
-    if (resp && resp.status !== 429 && resp.status < 500) break;
-    await new Promise((r) => setTimeout(r, 800 * Math.pow(2, attempt)));
-  }
-  if (!resp || !resp.ok) return { intel: fallbackStoryIntel(story), ok: false, degraded: true };
+  const result = await completeChat<any>({
+    feature: "story-intelligence",
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: JSON.stringify(userPayload) },
+    ],
+    tools: intelTool,
+    toolChoice: { type: "function", function: { name: "analyze_story" } },
+  });
+  if (!result.success) return { intel: fallbackStoryIntel(story), ok: false, degraded: true };
 
   try {
-    const j = await resp.json();
-    const args = j.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
+    const args = result.data.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
     if (!args) return { intel: fallbackStoryIntel(story), ok: false, degraded: true };
     const parsed = JSON.parse(args) as StoryIntelligence;
     return { intel: normalizeIntel(parsed, story), ok: true, degraded: false };
@@ -416,7 +399,7 @@ export async function persistStoryIntelligence(
     significance: r.intel.understanding?.significance ?? 0,
     trend_name: r.intel.trend?.name ?? null,
     trend_direction: r.intel.trend?.direction ?? null,
-    model: r.degraded ? "fallback" : MODEL,
+    model: r.degraded ? "fallback" : "meshapi",
     degraded: r.degraded,
     created_at: new Date().toISOString(),
   }));

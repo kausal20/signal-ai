@@ -45,6 +45,12 @@ export interface RawItem {
   hoursOld: number;
   needsTranslation?: boolean;
   rejectionReason?: string;
+  // Publisher (the REAL website) — distinct from `source` (the ingestion
+  // connector). For Google-News items this comes from the feed's <source> tag /
+  // the "… - Publisher" title suffix; for direct feeds it is the feed publisher.
+  publisher?: string;
+  publisherDomain?: string;
+  originalUrl?: string;   // real article URL (decoded from Google-News redirects)
 }
 
 export interface StoryCluster {

@@ -27,7 +27,6 @@ import type { RawItem, SignalItem, EditorialAudit, StoryCluster } from "./types.
 interface OrchestratorInput {
   sb: any;
   rawItems: RawItem[];
-  apiKey: string;
   triggerLabel: string;
   alreadyStoredRaw?: boolean;
   sourcesOk?: number;
@@ -54,7 +53,7 @@ interface OrchestratorOutput {
 }
 
 export async function runPipeline(input: OrchestratorInput): Promise<OrchestratorOutput> {
-  const { sb, apiKey } = input;
+  const { sb } = input;
   const runStart = Date.now();
   const logger = input.logger ?? new Logger(sb, input.pipelineRunId ?? undefined);
   const runId = input.pipelineRunId ?? await startPipelineRun(sb, input.triggerLabel);
@@ -119,7 +118,7 @@ export async function runPipeline(input: OrchestratorInput): Promise<Orchestrato
       for (let i = 0; i < clusters.length; i += 7) {
         aiCalls++;
         try {
-          const { items, ok, audits } = await curateClustersAI(clusters.slice(i, i + 7), apiKey, breaker);
+          const { items, ok, audits } = await curateClustersAI(clusters.slice(i, i + 7), breaker);
           if (ok) { aiOk = true; }
           else { aiFailures++; }
           curated.push(...items);
@@ -165,7 +164,7 @@ export async function runPipeline(input: OrchestratorInput): Promise<Orchestrato
   // Second-pass managing editor: top 25 only, merge/rewrite/reject. Falls back
   // deterministically if the gateway is down (circuit breaker shared).
   const secondPassRes = await runStage("second_pass", async () => {
-    const reviewed = await secondPassReview(ranked, apiKey, breaker);
+    const reviewed = await secondPassReview(ranked, breaker);
     logger.info("second_pass_done", { stage: "second_pass", meta: { before: ranked.length, after: reviewed.length } });
     return reviewed;
   }, { logger });
@@ -244,6 +243,13 @@ export async function runPipeline(input: OrchestratorInput): Promise<Orchestrato
   record(publishRes);
   const daily = publishRes.value ?? [];
 
+  // NOTE: Entity discovery no longer runs here. Under the Content Archive
+  // architecture, entity extraction + linking happen ASYNCHRONOUSLY over
+  // content_archive (which holds every validated article, not just the curated
+  // 12), driven by the `backfill-entities` processor. feed_items is purely the
+  // editorial Home feed and is not linked to the entity registry. See
+  // 20260718090000_content_archive.sql and functions/backfill-entities.
+
   // Intelligence Engine V2: reason ONCE per published story (not per user) and
   // cache the reusable 8-persona intelligence. Degrades to deterministic
   // fallback when the gateway is down; never blocks feed availability.
@@ -259,7 +265,7 @@ export async function runPipeline(input: OrchestratorInput): Promise<Orchestrato
       const results = await Promise.all(batch.map(async (item) => {
         const story = item as unknown as StoredStory;
         const ctx = buildTrendContext(item.trend_entities ?? [], trendIndex);
-        const { intel, ok, degraded } = await runAgentReasoning(story, ctx, apiKey, breaker);
+        const { intel, ok, degraded } = await runAgentReasoning(story, ctx, breaker);
         intel.roi = estimateROI(intel, story);   // CAP 5
         if (ok) reasoned++;
         return { feed_item_id: item.id, intel, degraded };

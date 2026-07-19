@@ -140,9 +140,14 @@
 }
 
 @layer utilities {
+  /* Source labels / eyebrows / scores. Option A: Inter (not JetBrains Mono) —
+     bold sans reads far cleaner than tracked mono at small sizes. Numbers stay
+     column-aligned via tabular-nums, so scores don't wobble. One definition →
+     applies everywhere `font-mono-tight` is used (source tags, scores, eyebrows). */
   .font-mono-tight {
-    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Monaco, monospace;
-    letter-spacing: -0.01em;
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.005em;
   }
   .no-scrollbar {
     -ms-overflow-style: none;
@@ -285,7 +290,7 @@
 }
 @keyframes glow-breathe { 0%,100% { opacity: 0.5; } 50% { opacity: 0.85; } }
 
-.animate-scale-in { animation: scale-in 360ms cubic-bezier(0.2,0,0,1) backwards; }
+.animate-scale-in { animation: scale-in 260ms cubic-bezier(0.22,1,0.36,1) backwards; }
 .animate-bookmark { animation: bookmark-pop 420ms cubic-bezier(0.34,1.56,0.64,1); }
 
 /* ═══════════════════════════════════════════════
@@ -487,4 +492,438 @@
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ═══════════════════════════════════════════════
+   SIGNAL PREMIUM MOTION SYSTEM — Phase 1
+   Reusable animation classes for the full app.
+   All GPU-friendly (transform + opacity only).
+   ═══════════════════════════════════════════════ */
+
+/* ─── Aurora gradient background ─────────────────────────────────────────── */
+@keyframes signal-aurora-drift {
+  0%   { background-position: 0% 50%; }
+  25%  { background-position: 50% 0%; }
+  50%  { background-position: 100% 50%; }
+  75%  { background-position: 50% 100%; }
+  100% { background-position: 0% 50%; }
+}
+
+.signal-ambient-field {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.signal-aurora {
+  position: absolute;
+  inset: -40%;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 30%, hsl(152 72% 48% / 0.08), transparent 50%),
+    radial-gradient(ellipse 60% 80% at 80% 70%, hsl(152 55% 38% / 0.06), transparent 50%),
+    radial-gradient(ellipse 90% 50% at 50% 50%, hsl(180 40% 30% / 0.04), transparent 50%);
+  background-size: 200% 200%;
+  animation: signal-aurora-drift 52s ease-in-out infinite;
+  filter: blur(60px);
+}
+
+/* ─── Radar sweep ────────────────────────────────────────────────────────── */
+@keyframes signal-radar-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.signal-radar-sweep {
+  position: absolute;
+  top: -10%;
+  left: 50%;
+  width: 120%;
+  height: 120%;
+  transform-origin: center center;
+  background: conic-gradient(
+    from 0deg,
+    hsl(152 72% 48% / 0.14),
+    transparent 18%,
+    transparent 100%
+  );
+  border-radius: 50%;
+  margin-left: -60%;
+  animation: signal-radar-rotate 14s linear infinite;
+  opacity: 0.5;
+  filter: blur(30px);
+}
+
+/* ─── Particle field ─────────────────────────────────────────────────────── */
+@keyframes signal-particle-drift {
+  0%   { transform: translateY(0) translateX(0); opacity: 0; }
+  10%  { opacity: 0.7; }
+  90%  { opacity: 0.7; }
+  100% { transform: translateY(-20px) translateX(8px); opacity: 0; }
+}
+
+.signal-particle-field {
+  position: absolute;
+  inset: 0;
+}
+
+.signal-particle {
+  position: absolute;
+  border-radius: 50%;
+  background: hsl(152 72% 60%);
+  box-shadow: 0 0 6px hsl(152 72% 48% / 0.6);
+  animation: signal-particle-drift var(--duration, 14s) ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+}
+
+/* ─── Card floating ──────────────────────────────────────────────────────── */
+@keyframes motion-float-y {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+
+.motion-float-card {
+  animation: motion-float-y 7s ease-in-out infinite;
+}
+
+/* ─── Button ripple effect ───────────────────────────────────────────────── */
+@keyframes motion-ripple-expand {
+  0%   { transform: translate(-50%, -50%) scale(0); opacity: 0.35; }
+  100% { transform: translate(-50%, -50%) scale(4); opacity: 0; }
+}
+
+.motion-button {
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 160ms cubic-bezier(0.2, 0, 0, 1),
+    box-shadow 250ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.motion-button:hover {
+  box-shadow:
+    0 0 0 1px hsl(152 72% 48% / 0.12),
+    0 4px 16px hsl(152 72% 48% / 0.12),
+    0 8px 30px hsl(0 0% 0% / 0.3);
+}
+
+.motion-button:active {
+  transform: scale(0.97);
+}
+
+.motion-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: hsl(152 72% 48% / 0.25);
+  pointer-events: none;
+  animation: motion-ripple-expand 600ms cubic-bezier(0.2, 0, 0, 1) forwards;
+}
+
+/* ─── Card hover glow ────────────────────────────────────────────────────── */
+.motion-glow-card {
+  transition:
+    transform 300ms cubic-bezier(0.2, 0, 0, 1),
+    box-shadow 300ms cubic-bezier(0.2, 0, 0, 1),
+    border-color 300ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.motion-glow-card:hover {
+  transform: translateY(-3px) scale(1.01);
+  border-color: hsl(152 72% 48% / 0.18);
+  box-shadow:
+    0 8px 32px -8px hsl(0 0% 0% / 0.5),
+    0 0 0 1px hsl(152 72% 48% / 0.08),
+    0 16px 48px -12px hsl(152 72% 48% / 0.12);
+}
+
+.motion-glow-card:active {
+  transform: scale(0.985);
+}
+
+/* ─── Enhanced bookmark animation ────────────────────────────────────────── */
+@keyframes bookmark-pop-enhanced {
+  0%   { transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 0 transparent); }
+  20%  { transform: scale(1.35) rotate(-12deg); filter: drop-shadow(0 0 8px hsl(152 72% 48% / 0.6)); }
+  50%  { transform: scale(0.9) rotate(8deg); filter: drop-shadow(0 0 4px hsl(152 72% 48% / 0.4)); }
+  70%  { transform: scale(1.05) rotate(-4deg); filter: drop-shadow(0 0 2px hsl(152 72% 48% / 0.2)); }
+  100% { transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 0 transparent); }
+}
+
+.animate-bookmark-enhanced {
+  animation: bookmark-pop-enhanced 500ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ─── Wave shimmer (upgraded skeleton) ───────────────────────────────────── */
+@keyframes wave-shimmer {
+  0%   { transform: translateX(-100%) skewX(-12deg); }
+  100% { transform: translateX(100%) skewX(-12deg); }
+}
+
+.motion-wave-shimmer {
+  position: relative;
+  overflow: hidden;
+  background: hsl(0 0% 100% / 0.04);
+  border-radius: 0.75rem;
+}
+
+.motion-wave-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(0 0% 100% / 0.03) 20%,
+    hsl(0 0% 100% / 0.08) 50%,
+    hsl(0 0% 100% / 0.03) 80%,
+    transparent 100%
+  );
+  animation: wave-shimmer 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* ─── Noise texture overlay ──────────────────────────────────────────────── */
+.signal-noise-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+  z-index: 1;
+  mix-blend-mode: overlay;
+}
+
+/* ─── Depth lighting ─────────────────────────────────────────────────────── */
+.signal-depth-light {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 50% 40% at 15% 10%, hsl(152 72% 48% / 0.07), transparent 60%),
+    radial-gradient(ellipse 40% 50% at 85% 80%, hsl(152 55% 38% / 0.04), transparent 60%),
+    radial-gradient(ellipse 60% 30% at 50% 100%, hsl(200 40% 30% / 0.03), transparent 50%);
+}
+
+/* ─── Nav indicator slide ────────────────────────────────────────────────── */
+.nav-indicator {
+  position: absolute;
+  top: 0;
+  height: 2px;
+  border-radius: 0 0 4px 4px;
+  background: hsl(152 72% 48%);
+  box-shadow: 0 2px 10px hsl(152 72% 48% / 0.5);
+  /* The actual slide is handled by Framer Motion layoutId */
+}
+
+/* ─── Live pulse (gentler, never blinks) ─────────────────────────────────── */
+@keyframes gentle-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.7; transform: scale(1.15); }
+}
+
+@keyframes gentle-pulse-ring {
+  0%   { transform: scale(1); opacity: 0.5; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+.animate-gentle-pulse {
+  animation: gentle-pulse 2.8s ease-in-out infinite;
+}
+
+/* ─── Celebration particles ──────────────────────────────────────────────── */
+@keyframes celebration-burst {
+  0%   { transform: translate(0, 0) scale(1); opacity: 1; }
+  100% { transform: translate(var(--tx, 20px), var(--ty, -30px)) scale(0); opacity: 0; }
+}
+
+.celebration-particle {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: hsl(152 72% 48%);
+  animation: celebration-burst 800ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ─── Focus glow for inputs ──────────────────────────────────────────────── */
+.radar-search-capsule.is-focused {
+  border-color: hsl(152 72% 48% / 0.35);
+  background: hsl(0 0% 100% / 0.065);
+  box-shadow:
+    0 0 0 3px hsl(152 72% 48% / 0.08),
+    0 4px 24px hsl(152 72% 48% / 0.08);
+  transition: all 350ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ─── Sparkline path draw ────────────────────────────────────────────────── */
+@keyframes sparkline-draw {
+  from { stroke-dashoffset: var(--path-length, 200); }
+  to   { stroke-dashoffset: 0; }
+}
+
+.motion-draw path[data-draw] {
+  stroke-dasharray: var(--path-length, 200);
+  animation: sparkline-draw 1.2s cubic-bezier(0.2, 0, 0, 1) forwards;
+}
+
+/* ─── Score ring glow pulse ──────────────────────────────────────────────── */
+@keyframes ring-glow-pulse {
+  0%, 100% { filter: drop-shadow(0 0 4px hsl(152 72% 48% / 0.4)); }
+  50%      { filter: drop-shadow(0 0 8px hsl(152 72% 48% / 0.7)); }
+}
+
+/* ─── Chip ripple ────────────────────────────────────────────────────────── */
+@keyframes chip-ripple {
+  0%   { transform: scale(0); opacity: 0.3; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+/* ═══════════════════════════════════════════════
+   LIQUID GLASS — Apple-style floating tab bar
+   ═══════════════════════════════════════════════ */
+
+.liquid-glass-shell {
+  position: relative;
+  background:
+    linear-gradient(
+      180deg,
+      hsl(0 0% 100% / 0.08) 0%,
+      hsl(0 0% 100% / 0.035) 40%,
+      hsl(0 0% 100% / 0.055) 100%
+    );
+  backdrop-filter:
+    blur(48px)
+    saturate(200%)
+    brightness(1.1);
+  -webkit-backdrop-filter:
+    blur(48px)
+    saturate(200%)
+    brightness(1.1);
+  border: 1px solid hsl(0 0% 100% / 0.10);
+  box-shadow:
+    0 8px 32px -4px hsl(0 0% 0% / 0.55),
+    0 24px 56px -12px hsl(0 0% 0% / 0.35),
+    0 1px 0 0 hsl(0 0% 100% / 0.10) inset,
+    0 -1px 0 0 hsl(0 0% 0% / 0.15) inset,
+    0 0 0 0.5px hsl(0 0% 100% / 0.05) inset;
+  overflow: hidden;
+}
+
+/* Ambient light sheen — top edge highlight */
+.liquid-glass-sheen {
+  position: absolute;
+  top: 0;
+  left: 8%;
+  right: 8%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(0 0% 100% / 0.30) 20%,
+    hsl(0 0% 100% / 0.55) 50%,
+    hsl(0 0% 100% / 0.30) 80%,
+    transparent 100%
+  );
+  z-index: 20;
+  pointer-events: none;
+}
+
+/* Bottom edge reflection — subtle inverted light catch */
+.liquid-glass-reflection {
+  position: absolute;
+  bottom: 0;
+  left: 12%;
+  right: 12%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(0 0% 100% / 0.10) 30%,
+    hsl(0 0% 100% / 0.18) 50%,
+    hsl(0 0% 100% / 0.10) 70%,
+    transparent 100%
+  );
+  z-index: 20;
+  pointer-events: none;
+}
+
+/* Inner glass surface with subtle noise texture */
+.liquid-glass-inner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-size: 128px 128px;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* The liquid indicator pill — the star of the show */
+.liquid-glass-pill {
+  position: relative;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      145deg,
+      hsl(152 72% 48% / 0.30) 0%,
+      hsl(152 65% 42% / 0.20) 35%,
+      hsl(152 60% 36% / 0.24) 65%,
+      hsl(152 72% 48% / 0.18) 100%
+    );
+  border: none;
+  box-shadow:
+    0 4px 16px -2px hsl(152 72% 48% / 0.22),
+    0 8px 28px -6px hsl(152 72% 48% / 0.14),
+    0 0 24px -4px hsl(152 72% 48% / 0.18),
+    inset 0 1px 0 0 hsl(0 0% 100% / 0.22),
+    inset 0 -1px 0 0 hsl(152 72% 48% / 0.15);
+  transform-origin: center center;
+  will-change: transform;
+  transition: box-shadow 200ms ease;
+}
+
+/* Inner highlight on the pill — liquid refraction */
+.liquid-glass-pill::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 10%;
+  right: 10%;
+  height: 45%;
+  border-radius: 16px 16px 50% 50%;
+  background: linear-gradient(
+    180deg,
+    hsl(0 0% 100% / 0.28) 0%,
+    hsl(0 0% 100% / 0.08) 40%,
+    hsl(0 0% 100% / 0.02) 100%
+  );
+  pointer-events: none;
+}
+
+/* Subtle glow halo around the pill */
+.liquid-glass-pill::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 28px;
+  background: radial-gradient(
+    ellipse at center,
+    hsl(152 72% 48% / 0.16) 0%,
+    hsl(152 72% 48% / 0.06) 50%,
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: -1;
+  animation: liquid-glow-pulse 3.5s ease-in-out infinite;
+}
+
+@keyframes liquid-glow-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%      { opacity: 1; transform: scale(1.08); }
 }

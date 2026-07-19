@@ -14,6 +14,7 @@
 // ---------------------------------------------------------------------------
 import { useState } from "react";
 import { ChevronLeft, RotateCcw, X, Check, Info } from "lucide-react";
+import { motion as fm, AnimatePresence, useReducedMotion } from "framer-motion";
 import { ScreenShell } from "../layouts/ScreenShell";
 import { BottomNav } from "../layouts/BottomNav";
 import { SectionHeader } from "../components/SectionHeader";
@@ -25,7 +26,7 @@ import { SettingsCard, SettingsRow } from "../components/SettingsCard";
 import { SignalButton } from "../components/SignalButton";
 import { SignalModal } from "../components/SignalModal";
 import { SignalBadge } from "../components/SignalBadge";
-import { motion } from "../animations/motion";
+import { motionTokens, viewportOnce } from "../animations/motion";
 import type { UserProfile, LearnedTopic, SectionKey } from "../shared/types";
 
 interface RoutineToggle {
@@ -108,18 +109,33 @@ export function SettingsPage({
       >
         <ChevronLeft className="h-5 w-5" />
       </button>
-      <h1 className="text-xl font-extrabold tracking-[-0.02em] text-foreground">My AI Identity</h1>
+      <h1 className="text-xl font-extrabold tracking-[-0.02em] text-foreground">Profile</h1>
     </div>
   );
+
+  const reduce = useReducedMotion();
+
+  // Section entrance variant for scroll-triggered reveal — opacity + rise only,
+  // matched to the shared section timing (no scale, no long duration).
+  const sectionAnim = reduce
+    ? {}
+    : {
+        initial: { opacity: 0, y: 12 } as const,
+        whileInView: { opacity: 1, y: 0 } as const,
+        viewport: viewportOnce,
+        transition: { duration: motionTokens.duration.section, ease: motionTokens.ease.premium },
+      };
 
   return (
     <ScreenShell header={header} footer={<BottomNav active="settings" bookmarkCount={bookmarkCount} onNavigate={onNavigate} />} bodyClassName="px-[22px] pb-32 pt-1">
       {/* 1 · PROFILE HERO */}
-      <ProfileCard profile={profile} stats={stats} confidenceLabel={confidenceLabel} onEdit={onEditProfile} className={`mb-[30px] ${motion.fadeUp}`} />
+      <fm.div {...sectionAnim}>
+        <ProfileCard profile={profile} stats={stats} confidenceLabel={confidenceLabel} className="mb-[30px]" />
+      </fm.div>
 
       {/* 2 · GOAL */}
       {goal && (
-        <section className={`mb-[30px] ${motion.fadeUp}`}>
+        <fm.section {...sectionAnim} className="mb-[30px]">
           <SectionHeader title="Current goal" />
           <div className="rounded-[20px] border border-white/[0.07] bg-white/[0.03] p-5">
             <div className="flex items-start justify-between gap-3.5">
@@ -127,7 +143,7 @@ export function SettingsPage({
                 <SignalBadge tone="green" className="mb-3">Primary goal</SignalBadge>
                 <h2 className="text-[21px] font-extrabold leading-snug tracking-[-0.02em] text-foreground">{goal.title}</h2>
               </div>
-              <SignalButton variant="secondary" size="sm" onClick={onChangeGoal} className="shrink-0">Change</SignalButton>
+
             </div>
             {(goal.focus || goal.weeklyTime) && (
               <div className="mt-[18px] flex gap-2.5">
@@ -136,17 +152,14 @@ export function SettingsPage({
               </div>
             )}
           </div>
-        </section>
+        </fm.section>
       )}
 
-      {/* EDIT PROFILE (production-owned inline section) */}
-      {editProfileSlot && (
-        <section id="edit-profile" className={`mb-[30px] ${motion.fadeUp}`}>{editProfileSlot}</section>
-      )}
+
 
       {/* 3 · OBSERVATIONS (read-only) — hidden when no real data */}
       {observations.length > 0 && (
-        <section className={`mb-[30px] ${motion.fadeUp}`}>
+        <fm.section {...sectionAnim} className="mb-[30px]">
           <SectionHeader
             title="How Signal understands you"
             action={
@@ -157,21 +170,26 @@ export function SettingsPage({
             description="This is what I've learned from your activity."
           />
           {infoOpen && (
-            <p className="mb-3.5 rounded-xl border border-white/[0.05] bg-white/[0.025] px-3.5 py-2.5 text-xs leading-relaxed text-muted-foreground animate-fade-up">
+            <fm.p
+              initial={reduce ? undefined : { opacity: 0, y: -6 }}
+              animate={reduce ? undefined : { opacity: 1, y: 0 }}
+              transition={reduce ? undefined : { duration: 0.3, ease: motionTokens.ease.premium }}
+              className="mb-3.5 rounded-xl border border-white/[0.05] bg-white/[0.025] px-3.5 py-2.5 text-xs leading-relaxed text-muted-foreground"
+            >
               These are observations Signal formed from your reading, saves, and Advisor sessions. They reflect what you actually do — you can't edit them directly.
-            </p>
+            </fm.p>
           )}
           <div className="flex flex-wrap gap-2">
             {observations.map((o) => (
               <InterestChip key={o} label={o} readOnly icon={<span className="text-[10px] text-green">◇</span>} />
             ))}
           </div>
-        </section>
+        </fm.section>
       )}
 
       {/* 4 · LEARNING BARS — hidden when no real data */}
       {learning.length > 0 && (
-        <section className={`mb-[30px] ${motion.fadeUp}`}>
+        <fm.section {...sectionAnim} className="mb-[30px]">
           <SectionHeader title="Signal is learning" action={<span className="font-mono-tight text-[10px] text-muted-foreground">updated yesterday</span>} />
           <div className="flex flex-col gap-4">
             {learning.map((l) => (
@@ -187,27 +205,24 @@ export function SettingsPage({
           <p className="mt-4 pl-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
             Signal adapts gradually — recommendations shift over days, not instantly.
           </p>
-        </section>
+        </fm.section>
       )}
 
       {/* 5 · INTERESTS (deferred save) */}
-      <section className={`mb-[30px] ${motion.fadeUp}`}>
+      <fm.section {...sectionAnim} className="mb-[30px]">
         <SectionHeader title="Your interests" description="Strong preferences you set. Your behavior still matters most." />
         <div className="flex flex-wrap gap-2">
           {allInterests.map((label) => (
-            <InterestChip key={label} label={label} selected={draft.includes(label)} onToggle={() => toggleDraft(label)} />
+            <InterestChip key={label} label={label} selected={draft.includes(label)} readOnly />
           ))}
         </div>
-      </section>
+      </fm.section>
 
-      {/* NOTIFICATIONS (production-owned: push.ts permission/subscribe/prefs) */}
-      {notificationsSlot && (
-        <section className={`mb-[30px] ${motion.fadeUp}`}>{notificationsSlot}</section>
-      )}
+
 
       {/* 6 · ROUTINE — hidden when no real data */}
       {routine.length > 0 && (
-        <section className={`mb-[30px] ${motion.fadeUp}`}>
+        <fm.section {...sectionAnim} className="mb-[30px]">
           <SectionHeader title="Your daily routine" />
           <SettingsCard>
             {routine.map((r) => (
@@ -215,17 +230,17 @@ export function SettingsPage({
                 key={r.key}
                 label={r.label}
                 sub={r.sub}
-                trailing={<SignalToggle checked={r.enabled} label={r.label} onChange={(next) => onToggleRoutine?.(r.key, next)} />}
+                trailing={<SignalToggle checked={r.enabled} label={r.label} onChange={() => {}} />}
               />
             ))}
             <SettingsRow label="Morning time" sub="When your brief arrives" trailing={<span className="font-mono-tight text-[13px] font-bold text-green">{briefTime}</span>} />
           </SettingsCard>
-        </section>
+        </fm.section>
       )}
 
       {/* 7 · WHY (trust) */}
       {whyReasons.length > 0 && (
-        <section className={`mb-[30px] ${motion.fadeUp}`}>
+        <fm.section {...sectionAnim} className="mb-[30px]">
           <button
             type="button"
             onClick={() => setWhyOpen((v) => !v)}
@@ -239,37 +254,33 @@ export function SettingsPage({
               <ChevronLeft className={`h-[18px] w-[18px] text-green transition-transform ${whyOpen ? "-rotate-90" : "rotate-180"}`} />
             </div>
             {whyOpen && (
-              <div className="relative mt-3.5 flex flex-col gap-2.5 animate-fade-up">
+              <fm.div
+                initial={reduce ? undefined : { opacity: 0, y: -8 }}
+                animate={reduce ? undefined : { opacity: 1, y: 0 }}
+                transition={reduce ? undefined : { duration: motionTokens.duration.section, ease: motionTokens.ease.premium }}
+                className="relative mt-3.5 flex flex-col gap-2.5"
+              >
                 {whyReasons.map((r, i) => (
                   <div key={i} className="flex items-start gap-2.5">
                     <span className="mt-[7px] h-[5px] w-[5px] shrink-0 rounded-full bg-green" />
                     <span className="text-[13px] leading-relaxed text-foreground/70">{r}</span>
                   </div>
                 ))}
-              </div>
+              </fm.div>
             )}
           </button>
-        </section>
+        </fm.section>
       )}
 
       {/* 8 · RESET */}
-      <section className={motion.fadeUp}>
+      <fm.section {...sectionAnim}>
         <SignalButton variant="danger" fullWidth size="lg" onClick={() => setResetOpen(true)} iconLeft={<RotateCcw className="h-[17px] w-[17px]" />}>
           Reset Signal
         </SignalButton>
         <p className="mt-4 text-center text-[11px] text-muted-foreground/70">Signal v2.0 · Tracking 1,240 sources</p>
-      </section>
+      </fm.section>
 
-      {/* STICKY SAVE BAR — deferred interest save */}
-      {dirty && (
-        <div className="absolute inset-x-0 bottom-0 z-[54] bg-[linear-gradient(to_top,#070707_70%,transparent)] px-[22px] pb-[max(14px,env(safe-area-inset-bottom))] pt-3.5 animate-slide-down">
-          <div className="flex items-center gap-3">
-            <span className="flex-1 text-[12.5px] leading-snug text-muted-foreground">You changed your interests.</span>
-            <SignalButton variant="secondary" onClick={() => setDraft(selectedInterests)}>Undo</SignalButton>
-            <SignalButton onClick={() => onSaveInterests?.(draft)}>Save changes</SignalButton>
-          </div>
-        </div>
-      )}
+
 
       {/* RESET CONFIRM */}
       <SignalModal open={resetOpen} onClose={() => setResetOpen(false)} tone="danger" labelledBy="reset-title">

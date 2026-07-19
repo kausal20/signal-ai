@@ -2,7 +2,7 @@
 // Product-peek welcome: a single-column live feed rail behind a scrim,
 // a radar-style logo with expanding pulse rings, headline, and CTA.
 // Scroll animation is pure CSS (translateY on GPU). Zero JS per-frame cost.
-import { ArrowRight, Sparkles } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import type { Signal } from "../shared/peek";
 import { BRAND_LOGOS, type BrandLogoKey } from "@/lib/brandLogos";
 
@@ -146,10 +146,12 @@ export function WelcomeStep({ peek = DEFAULT_PEEK, onGetStarted }: Props) {
               boxShadow: "0 8px 28px hsl(152 72% 48% / 0.18)",
             }}
           >
-            <Sparkles
-              aria-hidden
-              className="h-[22px] w-[22px] text-green drop-shadow-[0_0_10px_hsl(152_72%_48%/0.45)]"
-              strokeWidth={2.4}
+            <img
+              src="/signal-mark.png"
+              alt="Signal"
+              width={26}
+              height={26}
+              className="h-[26px] w-[26px] object-contain drop-shadow-[0_0_10px_hsl(152_72%_48%/0.45)]"
             />
           </div>
         </div>

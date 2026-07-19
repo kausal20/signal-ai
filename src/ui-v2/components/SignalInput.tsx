@@ -1,10 +1,12 @@
 // signal-ui-v2 · components/SignalInput.tsx
 // ---------------------------------------------------------------------------
-// Premium glass search bar — animated radar icon, soft green glow on focus,
-// better placeholder typography, voice waveform, floating appearance.
+// Premium glass search bar — animated radar icon, smooth expansion on focus,
+// intensified green glow, background brightness shift, voice waveform.
 // ---------------------------------------------------------------------------
 import { forwardRef, useState } from "react";
+import { motion as fm, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { motionTokens } from "../animations/motion";
 
 interface Props extends React.InputHTMLAttributes<HTMLInputElement> {
   iconLeft?: React.ReactNode;
@@ -53,21 +55,46 @@ function VoiceWaveform() {
   );
 }
 
-/** Premium glass search input with animated gradient border. */
+/** Premium glass search input with smooth expansion and intensified focus glow. */
 export const SignalInput = forwardRef<HTMLInputElement, Props>(function SignalInput(
   { iconLeft, iconRight, active, className, onFocus, onBlur, ...rest },
   ref
 ) {
   const [focused, setFocused] = useState(false);
+  const reduce = useReducedMotion();
 
   return (
-    <div
+    <fm.div
+      animate={
+        reduce
+          ? undefined
+          : {
+              scale: focused ? 1.015 : 1,
+              transition: { type: "spring", stiffness: 320, damping: 26 },
+            }
+      }
       className={cn(
         "radar-search-capsule",
         focused && "is-focused",
         className
       )}
     >
+      {/* Intensified glow ring on focus */}
+      {focused && !reduce && (
+        <fm.div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 -z-10 rounded-[inherit]"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
+          style={{
+            boxShadow: "0 0 0 3px hsl(152 72% 48% / 0.08), 0 4px 28px hsl(152 72% 48% / 0.1)",
+            borderRadius: "inherit",
+          }}
+        />
+      )}
+
       {/* Left: radar/search icon */}
       <span className="absolute left-4 top-1/2 z-10 flex -translate-y-1/2 shrink-0">
         {iconLeft ?? <RadarIcon active={!!active} />}
@@ -102,6 +129,6 @@ export const SignalInput = forwardRef<HTMLInputElement, Props>(function SignalIn
           </button>
         )}
       </span>
-    </div>
+    </fm.div>
   );
 });

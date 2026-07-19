@@ -68,6 +68,9 @@ function rowToItem(r: DbRow): FeedItem & { publishedAt: string; fetchedAt: strin
   };
 }
 
+// Module-level guard: only auto-trigger ingestion once per browser session.
+let _autoIngestTriggered = false;
+
 export function useLiveFeed() {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [status, setStatus] = useState<FetchStatus>({
@@ -98,32 +101,58 @@ export function useLiveFeed() {
       lastFetchAt: mapped[0]?.fetchedAt ?? s.lastFetchAt,
       error: null,
     }));
+
+    // ── Archive health check & auto-ingestion ────────────────────────────
+    const count = mapped.length;
+    if (count < 100) {
+      console.warn("[Signal feed] Archive has only", count, "articles — search quality will be degraded.");
+    }
+    if (count < 20 && !_autoIngestTriggered) {
+      _autoIngestTriggered = true;
+      console.info("[Signal feed] Archive nearly empty (", count, "items). Auto-triggering ingestion pipeline...");
+      supabase.functions.invoke("fetch-feed", { body: {} }).then(
+        (res) => {
+          if (res.error) {
+            console.warn("[Signal feed] Auto-ingestion failed:", res.error);
+          } else {
+            console.info("[Signal feed] Auto-ingestion triggered successfully. Reloading feed...");
+            // Reload the feed after ingestion completes (give it a moment)
+            setTimeout(() => {
+              supabase
+                .from("feed_items")
+                .select("*")
+                .order("published_at", { ascending: false })
+                .limit(200)
+                .then(({ data: freshData }) => {
+                  if (freshData && freshData.length > 0) {
+                    const freshMapped = freshData.map(rowToItem);
+                    setItems(freshMapped);
+                    setStatus((s) => ({
+                      ...s,
+                      itemCount: freshMapped.length,
+                      lastFetchAt: freshMapped[0]?.fetchedAt ?? s.lastFetchAt,
+                    }));
+                    console.info("[Signal feed] Feed reloaded after ingestion:", freshMapped.length, "articles");
+                  }
+                });
+            }, 8000); // Wait 8s for ingestion pipeline to finish
+          }
+        },
+        (err) => console.warn("[Signal feed] Auto-ingestion request failed:", err),
+      );
+    }
   }, []);
 
   const refresh = useCallback(async () => {
     setStatus((s) => ({ ...s, loading: true, error: null }));
-    try {
-      const { data, error } = await supabase.functions.invoke("fetch-feed", { body: {} });
-      if (error) throw error;
-      setStatus((s) => ({
-        ...s,
-        sources: data?.sources ?? null,
-        triggeredAt: data?.ran_at ?? new Date().toISOString(),
-      }));
-      await load();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setStatus((s) => ({ ...s, loading: false, error: msg }));
-    }
+    await load();
+    setStatus((s) => ({ ...s, triggeredAt: new Date().toISOString() }));
   }, [load]);
 
-  // Initial load + auto refresh on mount
+  // Initial load + cached feed refresh. Ingestion stays backend-only.
   useEffect(() => {
-    load().then(() => {
-      // trigger background refresh on app open
-      refresh();
-    });
-    // background refresh every 30 minutes while open
+    load();
+    // refresh cached feed every 30 minutes while open
     const id = setInterval(refresh, 30 * 60 * 1000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps

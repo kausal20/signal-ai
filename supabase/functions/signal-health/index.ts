@@ -1,6 +1,7 @@
 // Signal validation + monitoring endpoint. Runs the 10-point checklist
 // against the live database and returns pass/fail per check.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { requireAdmin } from "../_shared/admin_auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -31,6 +32,9 @@ const ALLOWED_CATEGORIES = [
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const adminError = requireAdmin(req, corsHeaders);
+  if (adminError) return adminError;
+
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   const checks: Check[] = [];
 
@@ -151,7 +155,7 @@ Deno.serve(async (req) => {
   {
     const since = new Date(Date.now() - 24 * 3600_000).toISOString();
     const { data: log } = await sb.from("notification_log")
-      .select("status,attempts,delivered_at")
+      .select("status,sent_at")
       .gte("sent_at", since)
       .limit(500);
     const total = log?.length ?? 0;

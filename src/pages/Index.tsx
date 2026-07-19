@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { BottomNav } from "@/components/BottomNav";
 import { FeedCard } from "@/components/FeedCard";
@@ -10,6 +10,7 @@ import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { useOnboarding } from "@/hooks/useOnboarding";
 import { PushPermissionBanner } from "@/components/PushPermissionBanner";
 import { usePersonalizedFeed } from "@/hooks/usePersonalizedFeed";
+import { useSignalSearch } from "@/hooks/useSignalSearch";
 import { Inbox, CheckCircle2 } from "lucide-react";
 import { ContinueBuilding } from "@/components/ContinueBuilding";
 import { HeroOpportunity } from "@/components/HeroOpportunity";
@@ -50,12 +51,28 @@ type FeedSection = "home" | "search" | "saved";
 
 const Index = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { isComplete, loading: onboardingLoading } = useOnboarding();
 
   const { items: FEED, status, refresh, advisor, profile } = usePersonalizedFeed();
   const [bookmarks, setBookmarks] = useLocalStorage<string[]>("signal:bookmarks", []);
   const [query, setQuery] = useState("");
-  const [activeSection, setActiveSection] = useState<FeedSection>("home");
+
+  // Read initial section from URL query param (e.g. /?section=saved)
+  const initialSection = (() => {
+    const s = searchParams.get("section");
+    if (s === "saved" || s === "search") return s;
+    return "home" as FeedSection;
+  })();
+  const [activeSection, setActiveSection] = useState<FeedSection>(initialSection);
+
+  // Clear the section param from URL after reading it (keep URL clean)
+  useEffect(() => {
+    if (searchParams.has("section")) {
+      searchParams.delete("section");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [activeTab, setActiveTab] = useState("all");
   const [savedTab, setSavedTab] = useState("all");
 
@@ -80,7 +97,30 @@ const Index = () => {
 
   const isSearchSection = activeSection === "search";
   const isSavedSection = activeSection === "saved";
+
+  // Signal Analysis sheet dispatches window events: a related-company chip runs a
+  // search here; "Ask Signal" routes to the Advisor (where Ask Signal lives).
+  useEffect(() => {
+    const onSearch = (e: Event) => {
+      const term = (e as CustomEvent<string>).detail;
+      if (typeof term !== "string" || !term.trim()) return;
+      setActiveSection("search");
+      setQuery(term.trim());
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+    const onAsk = () => navigate("/advisor");
+    window.addEventListener("signal:search", onSearch as EventListener);
+    window.addEventListener("signal:ask", onAsk as EventListener);
+    return () => {
+      window.removeEventListener("signal:search", onSearch as EventListener);
+      window.removeEventListener("signal:ask", onAsk as EventListener);
+    };
+  }, [navigate]);
   const isSearching = query.trim().length > 0;
+
+  // Archive-wide backend search (top-level hook). Falls back to the client
+  // filter below when the `search` function isn't deployed yet.
+  const backendSearch = useSignalSearch(query, isSearchSection);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -242,6 +282,9 @@ const Index = () => {
   if (USE_V2_SEARCH && isSearchSection) {
     const q = query.trim();
     const searchSources = mapSources(FEED);
+    const searchResults = q
+      ? backendSearch.results.map((s) => ({ ...s, saved: bookmarks.includes(s.id) }))
+      : [];
     const navSection = (s: string) => {
       if (s === "home") goHome();
       else if (s === "saved") goSaved();
@@ -255,12 +298,17 @@ const Index = () => {
         query={query}
         onQueryChange={setQuery}
         placeholder="Search AI news, tools, prompts..."
-        matchCount={q ? filtered.length : undefined}
+        matchCount={q ? searchResults.length : undefined}
         sourcesTracked={String(new Set(FEED.map((i) => i.source)).size)}
         trending={mapTrending(trendingSearches, FEED)}
         collections={mapCollections(featuredCollections, FEED)}
         sources={searchSources}
-        results={q ? filtered.map((i) => mapSignal(i, bookmarks.includes(i.id))) : []}
+        results={searchResults}
+        loading={backendSearch.loading}
+        error={backendSearch.error}
+        fallback={backendSearch.fallback}
+        relatedTopics={backendSearch.related}
+        suggestions={backendSearch.suggestions}
         bookmarkCount={bookmarks.length}
         onNavigate={navSection}
         onSubmitTerm={(term) => setQuery(term)}
@@ -317,7 +365,7 @@ const Index = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground pb-24">
+    <div className="min-h-screen bg-background text-foreground pb-28">
       {!isSearchSection && <PushPermissionBanner />}
       {!isSearchSection && <Header lastUpdated={status.lastFetchAt} loading={status.loading} />}
 
@@ -424,7 +472,6 @@ const Index = () => {
 
       <BottomNav
         activeSection={activeSection}
-        bookmarkCount={bookmarks.length}
         onHomeClick={goHome}
         onSearchClick={goSearch}
         onSavedClick={goSaved}

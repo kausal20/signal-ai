@@ -8,6 +8,7 @@ import {
   fetchWithTimeout,
 } from "./text.ts";
 import { withRetry, httpRetryable } from "./reliability.ts";
+import { splitPublisherSuffix, domainOf } from "./content_type.ts";
 import type { RawItem, SourceConnector, SourceKind, SourceTier } from "./types.ts";
 
 // -------------------------------------------------------------------------
@@ -24,6 +25,9 @@ export function makeRaw(args: {
   sourceWeight: number;
   engagement?: number;
   published_at: string;
+  publisher?: string;
+  publisherDomain?: string;
+  originalUrl?: string;
 }): RawItem | null {
   const canonicalUrl = canonicalizeUrl(args.url);
   if (!canonicalUrl) return null;
@@ -33,6 +37,7 @@ export function makeRaw(args: {
   const title = cleanText(args.rawTitle).slice(0, 260);
   const text = cleanText(args.rawText).slice(0, 1200);
   if (!title || title.length < 8) return null;
+  const originalUrl = args.originalUrl || args.url;
   return {
     id: args.id,
     rawTitle: title,
@@ -47,11 +52,18 @@ export function makeRaw(args: {
     published_at: publishedAt.toISOString(),
     hoursOld,
     needsTranslation: isCJK(title) || (!isMostlyEnglish(title + " " + text) && title.length > 20),
+    // Publisher = the real site. Defaults to the connector label / URL host for
+    // direct feeds; Google-News callers pass the resolved real publisher.
+    publisher: args.publisher || args.sourceLabel.replace(/\s+coverage$/i, ""),
+    publisherDomain: args.publisherDomain || domainOf(originalUrl),
+    originalUrl,
   };
 }
 
-function parseFeed(xml: string): Array<{ title: string; link: string; date: string; desc: string }> {
-  const out: Array<{ title: string; link: string; date: string; desc: string }> = [];
+interface FeedEntry { title: string; link: string; date: string; desc: string; publisher: string; publisherUrl: string }
+
+function parseFeed(xml: string): FeedEntry[] {
+  const out: FeedEntry[] = [];
   const blocks = xml.match(/<(item|entry)\b[\s\S]*?<\/\1>/gi) || [];
   for (const block of blocks) {
     const title = cleanText(block.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "");
@@ -61,9 +73,51 @@ function parseFeed(xml: string): Array<{ title: string; link: string; date: stri
     link = cleanText(link);
     const date = cleanText(block.match(/<(pubDate|updated|published)[^>]*>([\s\S]*?)<\/\1>/i)?.[2] || "");
     const desc = cleanText(block.match(/<(description|summary|content|content:encoded)[^>]*>([\s\S]*?)<\/\1>/i)?.[2] || "");
-    if (title && link) out.push({ title, link, date, desc });
+    // Google-News RSS embeds the real publisher: <source url="https://site.com">Name</source>
+    const srcTag = block.match(/<source\b([^>]*)>([\s\S]*?)<\/source>/i);
+    const publisher = cleanText(srcTag?.[2] || "");
+    const publisherUrl = cleanText(srcTag?.[1]?.match(/url="([^"]+)"/i)?.[1] || "");
+    if (title && link) out.push({ title, link, date, desc, publisher, publisherUrl });
   }
   return out;
+}
+
+/**
+ * Best-effort decode of a Google-News redirect link to the real article URL.
+ * The base64url segment after /articles/ contains the destination URL; we pull
+ * the first non-Google https URL out of it. Returns null when it can't be
+ * decoded (caller keeps the redirect link, which still resolves to the article).
+ */
+function decodeGoogleNewsUrl(link: string): string | null {
+  try {
+    const seg = link.match(/\/articles\/([A-Za-z0-9_-]+)/)?.[1];
+    if (!seg) return null;
+    let b64 = seg.replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4) b64 += "=";
+    const bytes = atob(b64);
+    const urls = bytes.match(/https?:\/\/[^\s"'<>\\]+/g);
+    const real = urls?.find((u) => !/(^https?:\/\/)?(news\.)?google\.com|gstatic\.com/.test(u));
+    if (!real) return null;
+    // Trim any trailing binary/protobuf bytes after the URL.
+    return real.replace(/[^\x20-\x7E].*$/, "").replace(/[)\]}]+$/, "").trim() || null;
+  } catch { return null; }
+}
+
+/** Resolve the real publisher + article URL + clean title for a feed entry. */
+function resolvePublisher(entry: FeedEntry, connectorLabel: string): { publisher: string; publisherDomain: string; originalUrl: string; cleanTitle: string } {
+  const host = (() => { try { return new URL(entry.link).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; } })();
+  const isGoogleNews = host === "news.google.com";
+  if (isGoogleNews) {
+    const decoded = decodeGoogleNewsUrl(entry.link);
+    const suffix = splitPublisherSuffix(entry.title);
+    const pubName = entry.publisher || suffix.publisher || "";
+    let pubDomain = "";
+    if (entry.publisherUrl) { try { pubDomain = new URL(entry.publisherUrl).hostname.replace(/^www\./, "").toLowerCase(); } catch { /* ignore */ } }
+    if (!pubDomain && decoded) { try { pubDomain = new URL(decoded).hostname.replace(/^www\./, "").toLowerCase(); } catch { /* ignore */ } }
+    return { publisher: pubName || pubDomain || "News", publisherDomain: pubDomain, originalUrl: decoded || entry.link, cleanTitle: suffix.title };
+  }
+  // Direct publisher feed: the feed IS the publisher.
+  return { publisher: connectorLabel.replace(/\s+coverage$/i, ""), publisherDomain: host, originalUrl: entry.link, cleanTitle: entry.title };
 }
 
 // -------------------------------------------------------------------------
@@ -88,14 +142,16 @@ export async function fetchRSS(
     const pub = e.date ? new Date(e.date) : new Date();
     const ageH = (Date.now() - pub.getTime()) / 3600_000;
     if (!Number.isFinite(ageH) || ageH > maxAgeH) continue;
+    const { publisher, publisherDomain, originalUrl, cleanTitle } = resolvePublisher(e, sourceLabel);
     const raw = makeRaw({
       id: `${source}_${hash(e.link)}`,
-      rawTitle: e.title,
+      rawTitle: cleanTitle,
       rawText: e.desc,
       url: e.link,
       source, sourceLabel, sourceKind, sourceWeight,
       engagement: baseEngagement,
       published_at: pub.toISOString(),
+      publisher, publisherDomain, originalUrl,
     });
     if (raw) out.push(raw);
   }

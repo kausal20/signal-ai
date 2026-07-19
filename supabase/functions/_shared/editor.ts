@@ -1,7 +1,8 @@
 // Stage 8: Editorial review (AI editor + deterministic fallback).
 // Stage 9: Opportunity / action / risk / who-benefits derivation.
 
-import { trimWords, wordCount, clampScore, cleanText, jaccard, titleTokens, isCJK, fetchWithTimeout } from "./text.ts";
+import { trimWords, wordCount, clampScore, cleanText, jaccard, titleTokens, isCJK } from "./text.ts";
+import { completeChat } from "./ai_provider.ts";
 import {
   BANNED_HEADLINE_LEAD, BANNED_HEADLINE_WORDS, BUILDER_RX, BUSINESS_RX,
   MAJOR_CAPABILITY_RX, PURE_REPO_SLUG, RESEARCH_RX, VAGUE_AUDIENCE,
@@ -21,8 +22,6 @@ import type {
   StoryCluster, SignalItem, ContentCategory, ActionLabel,
   EditorialAudit, FeedTag, FeedCategory, PublicSource, RawItem,
 } from "./types.ts";
-
-const LOVABLE_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
 
 // =====================================================================
 // Stage 8: Editorial polish + quality gate (Inshorts / TLDR / Ben's Bites).
@@ -354,7 +353,6 @@ const tools = [{
 
 export async function curateClustersAI(
   clusters: StoryCluster[],
-  apiKey: string,
   breaker?: { canAttempt: () => boolean },
 ): Promise<{ items: SignalItem[]; ok: boolean; audits: EditorialAudit[] }> {
   if (clusters.length === 0) return { items: [], ok: true, audits: [] };
@@ -374,31 +372,20 @@ export async function curateClustersAI(
     hours_old: Math.round(c.primary.hoursOld),
   }));
 
-  let resp: Response | null = null;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    resp = await fetchWithTimeout(LOVABLE_GATEWAY, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: JSON.stringify(payload) },
-        ],
-        tools,
-        tool_choice: { type: "function", function: { name: "curate_signals" } },
-      }),
-    }, 30000);
-    if (resp.ok) break;
-    if (resp.status !== 429 && resp.status < 500) break;
-    await new Promise((r) => setTimeout(r, 900 * Math.pow(2, attempt)));
-  }
-  if (!resp || !resp.ok) {
-    console.error("AI gateway", resp?.status, await resp?.text().catch(() => ""));
+  const result = await completeChat<any>({
+    feature: "feed-editor",
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: JSON.stringify(payload) },
+    ],
+    tools,
+    toolChoice: { type: "function", function: { name: "curate_signals" } },
+  });
+  if (!result.success) {
+    console.error("AI provider", result.error);
     return { items: [], ok: false, audits: [] };
   }
-  const j = await resp.json();
-  const args = j.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
+  const args = result.data.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
   if (!args) return { items: [], ok: false, audits: [] };
   let parsed: { items: any[] };
   try { parsed = JSON.parse(args); } catch { return { items: [], ok: false, audits: [] }; }
@@ -661,7 +648,6 @@ const secondPassTools = [{
 
 export async function secondPassReview(
   items: SignalItem[],
-  apiKey: string,
   breaker?: { canAttempt: () => boolean },
 ): Promise<SignalItem[]> {
   if (items.length <= 1) return items;
@@ -681,39 +667,29 @@ export async function secondPassReview(
     entities: it.trend_entities,
   }));
 
-  let resp: Response | null = null;
   try {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      resp = await fetchWithTimeout(LOVABLE_GATEWAY, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "google/gemini-3-flash-preview",
-          messages: [
-            { role: "system", content: SECOND_PASS_PROMPT },
-            { role: "user", content: JSON.stringify(payload) },
-          ],
-          tools: secondPassTools,
-          tool_choice: { type: "function", function: { name: "final_review" } },
-        }),
-      }, 30000);
-      if (resp.ok) break;
-      if (resp.status !== 429 && resp.status < 500) break;
-      await new Promise((r) => setTimeout(r, 800 * Math.pow(2, attempt)));
-    }
+    const result = await completeChat<any>({
+      feature: "feed-editor-review",
+      messages: [
+        { role: "system", content: SECOND_PASS_PROMPT },
+        { role: "user", content: JSON.stringify(payload) },
+      ],
+      tools: secondPassTools,
+      toolChoice: { type: "function", function: { name: "final_review" } },
+    });
+    if (!result.success) return secondPassFallback(items);
+
+    const args = result.data.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
+    if (!args) return secondPassFallback(items);
+    const parsed = JSON.parse(args) as { items: any[] };
+    return applySecondPassReview(shortlist, rest, parsed);
   } catch (e) {
-    console.error("second pass gateway", e);
+    console.error("second pass provider", e);
     return secondPassFallback(items);
   }
-  if (!resp || !resp.ok) return secondPassFallback(items);
+}
 
-  let parsed: { items: any[] };
-  try {
-    const j = await resp.json();
-    const args = j.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-    if (!args) return secondPassFallback(items);
-    parsed = JSON.parse(args);
-  } catch { return secondPassFallback(items); }
+function applySecondPassReview(shortlist: SignalItem[], rest: SignalItem[], parsed: { items: any[] }): SignalItem[] {
 
   const decisions = new Map<number, any>();
   for (const d of parsed.items ?? []) {

@@ -2,6 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
 import { acquireLock, releaseLock } from "../_shared/reliability.ts";
 import { Logger } from "../_shared/logger.ts";
+import { requireAdmin } from "../_shared/admin_auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -68,6 +69,8 @@ const INTERRUPTIBLE_CATEGORIES = new Set([
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const adminError = requireAdmin(req, corsHeaders);
+  if (adminError) return adminError;
 
   // Phase 8: only one delivery pass at a time so two triggers (inline + cron)
   // can't double-send.
@@ -143,8 +146,6 @@ Deno.serve(async (req) => {
             subscription_endpoint: sub.endpoint,
             feed_item_id: it.id,
             status: `alert:${it.content_category ?? "signal"}`,
-            attempts: result.attempts,
-            delivered_at: new Date().toISOString(),
           });
           logger.info("notification_sent", { source: "push", message: it.id, meta: { attempts: result.attempts } });
           sent++;
@@ -159,7 +160,6 @@ Deno.serve(async (req) => {
             subscription_endpoint: sub.endpoint,
             feed_item_id: it.id,
             status: `error:${result.status ?? "x"}`,
-            attempts: result.attempts,
           }).then(() => {}, () => {});
           logger.error("notification_failed", { source: "push", message: it.id, retryCount: result.attempts, meta: { status: result.status } });
         }
@@ -175,7 +175,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     logger.error("notifications_crashed", { message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined });
     await logger.flush();
-    return new Response(JSON.stringify({ error: String(e) }), {
+    return new Response(JSON.stringify({ error: "internal error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

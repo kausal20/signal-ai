@@ -1,9 +1,15 @@
 // signal-ui-v2 · components/RecommendationCard.tsx
+// ---------------------------------------------------------------------------
+// Hero recommendation with floating animation, breathing glow, enhanced
+// confidence ring, and premium CTA. Feels alive and intentional.
+// ---------------------------------------------------------------------------
 import { Rocket, Bookmark } from "lucide-react";
+import { motion as fm, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { SignalScoreRing } from "./SignalScoreRing";
 import { SignalButton } from "./SignalButton";
 import { SignalBadge } from "./SignalBadge";
+import { haptic } from "../animations/motion";
 import type { Recommendation } from "../shared/types";
 
 interface Props {
@@ -31,10 +37,33 @@ export function RecommendationCard({
   className,
 }: Props) {
   const { id, title, reason, conviction, ctaLabel, saved } = recommendation;
+  const reduce = useReducedMotion();
 
   return (
-    <div className={cn("green-halo relative overflow-hidden p-5", className)}>
-      <div className="pointer-events-none absolute -right-12 -top-14 h-44 w-44 rounded-full bg-green/[0.16] blur-[50px]" />
+    <fm.div
+      animate={reduce ? undefined : { y: [0, -3, 0] }}
+      transition={reduce ? undefined : { duration: 7, repeat: Infinity, ease: "easeInOut" }}
+      whileHover={reduce ? undefined : { y: -5, scale: 1.006 }}
+      whileTap={reduce ? undefined : { scale: 0.99 }}
+      className={cn("green-halo relative overflow-hidden p-5", className)}
+    >
+      {/* Breathing ambient glow */}
+      <fm.div
+        aria-hidden
+        className="pointer-events-none absolute -right-12 -top-14 h-44 w-44 rounded-full bg-green/[0.16] blur-[50px]"
+        animate={reduce ? undefined : { opacity: [0.5, 0.9, 0.5], scale: [0.95, 1.08, 0.95] }}
+        transition={reduce ? undefined : { duration: 4.5, repeat: Infinity, ease: "easeInOut" }}
+      />
+
+      {/* Secondary glow — bottom left */}
+      {!reduce && (
+        <fm.div
+          aria-hidden
+          className="pointer-events-none absolute -bottom-10 -left-10 h-36 w-36 rounded-full bg-green/[0.08] blur-[40px]"
+          animate={{ opacity: [0.3, 0.65, 0.3] }}
+          transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut", delay: 1.5 }}
+        />
+      )}
 
       <div className="relative mb-4">
         <SignalBadge tone="green" icon={<Rocket className="h-3 w-3" />}>{eyebrow}</SignalBadge>
@@ -59,12 +88,15 @@ export function RecommendationCard({
           variant="secondary"
           size="lg"
           aria-label={saved ? "Remove bookmark" : "Save"}
-          onClick={() => onToggleSave?.(id)}
+          onClick={() => {
+            haptic(10);
+            onToggleSave?.(id);
+          }}
           className="w-[52px] px-0"
         >
-          <Bookmark className={cn("h-[18px] w-[18px]", saved && "fill-green text-green animate-bookmark")} />
+          <Bookmark className={cn("h-[18px] w-[18px]", saved && "fill-green text-green animate-bookmark-enhanced")} />
         </SignalButton>
       </div>
-    </div>
+    </fm.div>
   );
 }

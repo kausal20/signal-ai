@@ -11,6 +11,7 @@ import { runPipeline } from "../_shared/pipeline.ts";
 import { dedupeByCanonicalUrl, rejectRaw } from "../_shared/cluster.ts";
 import { acquireLock, releaseLock } from "../_shared/reliability.ts";
 import { Logger } from "../_shared/logger.ts";
+import { requireAdmin } from "../_shared/admin_auth.ts";
 import type { RawItem } from "../_shared/types.ts";
 
 const corsHeaders = {
@@ -20,11 +21,12 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const adminError = requireAdmin(req, corsHeaders);
+  if (adminError) return adminError;
+
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   const runStart = Date.now();
 
@@ -87,7 +89,6 @@ Deno.serve(async (req) => {
   const result = await runPipeline({
     sb,
     rawItems: acceptedPre,
-    apiKey: LOVABLE_API_KEY,
     triggerLabel: "fetch-feed",
     alreadyStoredRaw: true,
     sourcesOk,
@@ -101,7 +102,7 @@ Deno.serve(async (req) => {
   if (result.stored > 0) {
     fetch(`${SUPABASE_URL}/functions/v1/send-notifications`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({ trigger: "fetch-feed" }),
     }).catch((e) => console.error("notify trigger", e));
   }
@@ -127,7 +128,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     logger.error("fetch_feed_crashed", { message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined });
     await logger.flush();
-    return new Response(JSON.stringify({ error: String(e) }), {
+    return new Response(JSON.stringify({ error: "internal error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } finally {

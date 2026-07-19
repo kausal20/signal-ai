@@ -6,6 +6,7 @@ import { runPipeline } from "../_shared/pipeline.ts";
 import { loadDisabledSources, startPipelineRun } from "../_shared/store.ts";
 import { acquireLock, releaseLock } from "../_shared/reliability.ts";
 import { Logger } from "../_shared/logger.ts";
+import { requireAdmin } from "../_shared/admin_auth.ts";
 import type { RawItem } from "../_shared/types.ts";
 
 const corsHeaders = {
@@ -15,11 +16,12 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  const adminError = requireAdmin(req, corsHeaders);
+  if (adminError) return adminError;
+
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   // Phase 8: single publisher at a time (clustering + AI calls are expensive).
@@ -47,7 +49,7 @@ Deno.serve(async (req) => {
     logger.error("publish_read_failed", { message: error.message });
     await logger.flush();
     await releaseLock(sb, "publish-feed");
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: "internal error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -72,7 +74,6 @@ Deno.serve(async (req) => {
   const result = await runPipeline({
     sb,
     rawItems,
-    apiKey: LOVABLE_API_KEY,
     triggerLabel: "publish-feed",
     alreadyStoredRaw: true,
     sourcesOk: 0,
@@ -86,7 +87,7 @@ Deno.serve(async (req) => {
   if (result.stored > 0) {
     fetch(`${SUPABASE_URL}/functions/v1/send-notifications`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({ trigger: "publish-feed" }),
     }).catch((e) => console.error("notify trigger", e));
   }
@@ -109,7 +110,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     logger.error("publish_crashed", { message: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined });
     await logger.flush();
-    return new Response(JSON.stringify({ error: String(e) }), {
+    return new Response(JSON.stringify({ error: "internal error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } finally {

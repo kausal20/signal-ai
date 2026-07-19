@@ -5,12 +5,9 @@
 // trend summary, why it matters, prediction, confidence, evidence. Cached in
 // trend_intelligence and reused by every user. Cost = ~1 call/day, O(1) in users.
 
-import { fetchWithTimeout } from "./text.ts";
+import { completeChat } from "./ai_provider.ts";
 import { dbWrite } from "./reliability.ts";
 import type { TrendEntity } from "./types.ts";
-
-const LOVABLE_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const MODEL = "google/gemini-3-flash-preview";
 
 export interface TrendInsight {
   entity_id: string;
@@ -84,7 +81,6 @@ const trendTool = [{
 
 export async function reasonTrends(
   inputs: TrendInput[],
-  apiKey: string,
   breaker?: { canAttempt: () => boolean },
 ): Promise<{ insights: TrendInsight[]; ok: boolean }> {
   if (inputs.length === 0) return { insights: [], ok: true };
@@ -102,32 +98,19 @@ export async function reasonTrends(
     sample_headlines: i.sampleHeadlines.slice(0, 5),
   }));
 
-  let resp: Response | null = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      resp = await fetchWithTimeout(LOVABLE_GATEWAY, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: JSON.stringify(payload) },
-          ],
-          tools: trendTool,
-          tool_choice: { type: "function", function: { name: "summarize_trends" } },
-        }),
-      }, 30000);
-    } catch { resp = null; }
-    if (resp && resp.ok) break;
-    if (resp && resp.status !== 429 && resp.status < 500) break;
-    await new Promise((r) => setTimeout(r, 800 * Math.pow(2, attempt)));
-  }
-  if (!resp || !resp.ok) return fallback();
+  const result = await completeChat<any>({
+    feature: "trend-intelligence",
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: JSON.stringify(payload) },
+    ],
+    tools: trendTool,
+    toolChoice: { type: "function", function: { name: "summarize_trends" } },
+  });
+  if (!result.success) return fallback();
 
   try {
-    const j = await resp.json();
-    const args = j.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
+    const args = result.data.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
     if (!args) return fallback();
     const parsed = JSON.parse(args) as { trends: any[] };
     const byId = new Map((parsed.trends ?? []).map((t) => [t.id, t]));

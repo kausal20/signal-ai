@@ -1,6 +1,11 @@
 // signal-ui-v2 · components/SettingsCard.tsx
+// ---------------------------------------------------------------------------
+// Settings container with fade entrance and accordion-ready rows.
+// ---------------------------------------------------------------------------
 import { ChevronRight } from "lucide-react";
+import { motion as fm, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { motionTokens, accordionVariants } from "../animations/motion";
 
 interface RowProps {
   label: string;
@@ -13,17 +18,25 @@ interface RowProps {
   danger?: boolean;
 }
 
-/** A grouped settings container. Compose <SettingsRow/> children inside. */
+/** A grouped settings container with fade entrance. Compose <SettingsRow/> children inside. */
 export function SettingsCard({ children, className }: { children: React.ReactNode; className?: string }) {
+  const reduce = useReducedMotion();
   return (
-    <div className={cn("overflow-hidden rounded-[18px] border border-white/[0.06] bg-white/[0.028]", className)}>
+    <fm.div
+      initial={reduce ? undefined : { opacity: 0, y: 10 }}
+      animate={reduce ? undefined : { opacity: 1, y: 0 }}
+      transition={reduce ? undefined : { duration: 0.36, ease: motionTokens.ease.premium }}
+      className={cn("overflow-hidden rounded-[18px] border border-white/[0.06] bg-white/[0.028]", className)}
+    >
       {children}
-    </div>
+    </fm.div>
   );
 }
 
-/** A single row inside a SettingsCard. Divider handled by the parent's flow. */
+/** A single row inside a SettingsCard with hover animation. Divider handled by the parent's flow. */
 export function SettingsRow({ label, sub, icon, trailing, onClick, danger }: RowProps) {
+  const reduce = useReducedMotion();
+
   const inner = (
     <>
       {icon && (
@@ -44,10 +57,49 @@ export function SettingsRow({ label, sub, icon, trailing, onClick, danger }: Row
 
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className={cn(cls, "transition-colors hover:bg-white/[0.03] active:bg-white/[0.05]")}>
+      <fm.button
+        type="button"
+        onClick={onClick}
+        whileHover={reduce ? undefined : { x: 3, backgroundColor: "hsl(0 0% 100% / 0.03)" }}
+        whileTap={reduce ? undefined : { scale: 0.99 }}
+        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+        className={cn(cls, "transition-colors active:bg-white/[0.05]")}
+      >
         {inner}
-      </button>
+      </fm.button>
     );
   }
   return <div className={cls}>{inner}</div>;
+}
+
+/**
+ * Accordion body wrapper for expandable settings sections.
+ * Animates height from 0 → auto with spring physics.
+ *
+ * Usage:
+ *   <SettingsAccordionBody expanded={isOpen}>
+ *     <SettingsRow ... />
+ *   </SettingsAccordionBody>
+ */
+export function SettingsAccordionBody({
+  expanded,
+  children,
+  className,
+}: {
+  expanded: boolean;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const reduce = useReducedMotion();
+
+  return (
+    <fm.div
+      initial="collapsed"
+      animate={expanded ? "expanded" : "collapsed"}
+      variants={reduce ? undefined : accordionVariants}
+      className={cn("overflow-hidden", className)}
+    >
+      {children}
+    </fm.div>
+  );
 }

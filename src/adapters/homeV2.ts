@@ -202,6 +202,15 @@ export function mapSignal(item: FeedItem, saved: boolean): Signal {
     takeaway: takeaway || undefined,
     critical: item.impact === "critical",
     saved,
+    // Structured content for the Top Story card (grounded feed fields).
+    whatHappened: item.summary || undefined,
+    affected: item.whoFor || undefined,
+    category: item.category,
+    // Source attribution — straight from the original article, nothing invented.
+    url: item.url,
+    domain: domainOf(item.url),
+    publishedAt: item.timestamp,
+    verified: !!sourceIdentity.key,   // a resolved brand logo ⇒ recognized publisher
   };
 }
 

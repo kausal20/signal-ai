@@ -150,6 +150,7 @@ Deno.serve(async (req) => {
 
   const now = new Date().toISOString();
   const persona = inferPersona(primaryRole, primaryGoal);
+  const skillLevel = experienceLevel === "expert" ? "advanced" : experienceLevel;
   const profile = {
     primary_role: primaryRole,
     primary_goal: primaryGoal,
@@ -174,7 +175,7 @@ Deno.serve(async (req) => {
     client_id: clientId,
     persona,
     persona_mix: personaMix(primaryRole, primaryGoal),
-    skill_level: experienceLevel,
+    skill_level: skillLevel,
     role: primaryRole,
     primary_role: primaryRole,
     primary_goal: primaryGoal,

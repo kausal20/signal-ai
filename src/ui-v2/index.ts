@@ -15,6 +15,7 @@ export { SignalDetailPage } from "./pages/SignalDetailPage";
 // Layouts
 export { ScreenShell } from "./layouts/ScreenShell";
 export { BottomNav } from "./layouts/BottomNav";
+export { PageTransition } from "./layouts/PageTransition";
 
 // Components — primitives
 export { SignalButton } from "./components/SignalButton";
@@ -33,11 +34,12 @@ export { InterestChip } from "./components/InterestChip";
 
 // Components — domain
 export { FeedCard } from "./components/FeedCard";
+export { TopStoryCard } from "./components/TopStoryCard";
 export { RecommendationCard } from "./components/RecommendationCard";
 export { ProjectCard } from "./components/ProjectCard";
 export { ProfileCard } from "./components/ProfileCard";
 export { Timeline } from "./components/Timeline";
-export { SettingsCard, SettingsRow } from "./components/SettingsCard";
+export { SettingsCard, SettingsRow, SettingsAccordionBody } from "./components/SettingsCard";
 export { TrendingRow } from "./components/TrendingRow";
 export { TrendingTicker } from "./components/TrendingTicker";
 export { CollectionCard } from "./components/CollectionCard";
@@ -47,7 +49,35 @@ export { SourceRow } from "./components/SourceRow";
 export { BrandLogo } from "./icons/BrandLogo";
 
 // Motion
-export { motion, stagger } from "./animations/motion";
+export {
+  motion,
+  motionTokens,
+  stagger,
+  styleDelay,
+  haptic,
+  pageVariants,
+  pageTransition,
+  containerVariants,
+  sectionVariants,
+  itemVariants,
+  scrollRevealVariants,
+  floatVariants,
+  cardHover,
+  cardTap,
+  buttonHover,
+  buttonTap,
+  navIconHover,
+  navIconTap,
+  accordionVariants,
+  modalVariants,
+  backdropVariants,
+  bookmarkSpring,
+  celebrationVariants,
+  viewportOnce,
+  viewportRepeat,
+} from "./animations/motion";
+export { useScrollReveal } from "./animations/useScrollReveal";
+export { useAmbientPause } from "./animations/useAmbientPause";
 
 // Types
 export type * from "./shared/types";

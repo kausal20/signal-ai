@@ -1,0 +1,220 @@
+// signal-ui-v2 · components/TopStoryCard.tsx
+// ---------------------------------------------------------------------------
+// Hero Story Card — premium editorial layout (Apple News / Perplexity Discover
+// feel). Typography-first: nothing is clipped at one line. The card grows with
+// its content (headline up to 3 lines, summary up to 3) between a comfortable
+// min and a sensible max, so long and short stories both breathe. Buttons stay
+// pinned to the bottom, equal width/height, regardless of text length.
+// A keyed AnimatePresence swaps stories with a staggered reveal.
+// ---------------------------------------------------------------------------
+import { AnimatePresence, motion as fm, useReducedMotion, type Variants } from "framer-motion";
+import { Bookmark, Share2, Clock, ArrowRight } from "lucide-react";
+import { BrandLogo } from "../icons/BrandLogo";
+
+import { openOriginal } from "./SourceAttribution";
+import { AiIntelligenceButton } from "./AiIntelligenceButton";
+import { eventBadge } from "../shared/eventType";
+import type { Signal } from "../shared/types";
+
+interface Props {
+  signal: Signal;
+  onOpen?: (id: string) => void;
+  onToggleSave?: (id: string) => void;
+  onShare?: (id: string) => void;
+  className?: string;
+}
+
+function readMins(s: Signal): number {
+  const words = `${s.title} ${s.takeaway ?? ""}`.trim().split(/\s+/).length;
+  return Math.max(1, Math.round(words / 120));
+}
+
+function categoryLabel(s: Signal): string {
+  const t = (s.tag ?? "").toString().replace(/[_-]+/g, " ").trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : "AI";
+}
+
+// Affected-audience chips derived from the feed's `whoFor` (grounded, not invented).
+function affectedChips(signal: Signal): string[] {
+  return (signal.affected ?? "")
+    .split(/[,;/]|\band\b|·/i)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 3 && s.length <= 22)
+    .slice(0, 4);
+}
+
+// Staggered reveal for the content on story change.
+const container: Variants = {
+  hidden: { opacity: 0, y: 18 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1], staggerChildren: 0.06, delayChildren: 0.05 } },
+  exit: { opacity: 0, y: -18, transition: { duration: 0.26, ease: [0.4, 0, 1, 1] } },
+};
+const item: Variants = {
+  hidden: { opacity: 0, y: 14 },
+  show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 380, damping: 30, mass: 0.7 } },
+};
+
+export function TopStoryCard({ signal, onOpen, onToggleSave, onShare, className = "" }: Props) {
+  const reduce = useReducedMotion();
+  const badge = eventBadge(signal.title, signal.category, signal.tag);
+  const affected = affectedChips(signal);
+
+  const handleShare = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onShare) onShare(signal.id);
+    else if (navigator.share) {
+      navigator.share({ title: signal.title, text: signal.takeaway || signal.title, url: window.location.href }).catch(() => {});
+    }
+  };
+
+  return (
+    <fm.article
+      onClick={() => onOpen?.(signal.id)}
+      whileHover={reduce ? undefined : { y: -3 }}
+      transition={{ type: "spring", stiffness: 300, damping: 24 }}
+      className={`group relative flex min-h-[300px] w-full cursor-pointer select-none flex-col overflow-hidden rounded-[28px] border border-white/[0.08] bg-[#0a0d0a]/95 p-6 shadow-[0_16px_44px_-14px_rgba(0,0,0,0.8)] backdrop-blur-xl sm:p-7 ${className}`}
+    >
+      {/* Ambient editorial glow (depth, not an image) */}
+      <div aria-hidden className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-green/[0.10] blur-3xl" />
+
+      {/* Persistent corner actions — never re-animate on story change */}
+      <div className="absolute right-5 top-5 z-20 flex items-center gap-2 pointer-events-auto sm:right-6 sm:top-6">
+        <fm.button
+          type="button"
+          aria-label={signal.saved ? "Remove bookmark" : "Bookmark story"}
+          aria-pressed={signal.saved}
+          onClick={(e) => { e.stopPropagation(); onToggleSave?.(signal.id); }}
+          whileTap={reduce ? undefined : { scale: 0.88 }}
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-zinc-400 backdrop-blur-md transition-colors hover:border-white/20 hover:bg-white/[0.1] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+        >
+          <Bookmark className={`h-4 w-4 ${signal.saved ? "fill-green text-green" : ""}`} />
+        </fm.button>
+        <fm.button
+          type="button"
+          aria-label="Share story"
+          onClick={handleShare}
+          whileTap={reduce ? undefined : { scale: 0.88 }}
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-zinc-400 backdrop-blur-md transition-colors hover:border-white/20 hover:bg-white/[0.1] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green"
+        >
+          <Share2 className="h-4 w-4" />
+        </fm.button>
+      </div>
+
+      {/* Content — swaps with a staggered reveal when the story changes */}
+      <AnimatePresence mode="wait">
+        <fm.div
+          key={signal.id}
+          variants={reduce ? undefined : container}
+          initial={reduce ? undefined : "hidden"}
+          animate={reduce ? undefined : "show"}
+          exit={reduce ? undefined : "exit"}
+          className="relative z-10 flex flex-1 flex-col"
+        >
+          {/* Breaking badge */}
+          <fm.div variants={reduce ? undefined : item} className="mb-4 pr-24">
+            <span className={`inline-flex items-center rounded-full border px-3 py-1 font-mono-tight text-[10.5px] font-bold uppercase tracking-[0.12em] backdrop-blur-md ${badge.className}`}>
+              {badge.label}
+            </span>
+          </fm.div>
+
+          {/* Headline — up to 3 lines, balanced wrap, typography is the hero */}
+          <fm.h3
+            variants={reduce ? undefined : item}
+            className="text-[25px] font-extrabold leading-[1.14] tracking-[-0.025em] text-white [text-wrap:balance] line-clamp-3 sm:text-[30px]"
+          >
+            {signal.title}
+          </fm.h3>
+
+          {/* Structured editorial summary — What happened · Why it matters · Who */}
+          <fm.p
+            variants={reduce ? undefined : item}
+            className="mt-3 max-w-[54ch] text-[15px] leading-relaxed text-white/70 line-clamp-2 sm:text-[15.5px]"
+          >
+            {signal.whatHappened || signal.takeaway || "Key developments from today's top signal."}
+          </fm.p>
+          {signal.takeaway && (signal.whatHappened && signal.takeaway !== signal.whatHappened) && (
+            <fm.div variants={reduce ? undefined : item} className="mt-2.5 flex gap-2">
+              <span className="mt-0.5 shrink-0 font-mono-tight text-[9.5px] font-bold uppercase tracking-[0.10em] text-green">Why</span>
+              <p className="max-w-[52ch] text-[13.5px] leading-snug text-white/55 line-clamp-2">{signal.takeaway}</p>
+            </fm.div>
+          )}
+          {affected.length > 0 && (
+            <fm.div variants={reduce ? undefined : item} className="mt-3 flex flex-wrap items-center gap-1.5">
+              <span className="font-mono-tight text-[9.5px] font-bold uppercase tracking-[0.10em] text-white/40">Affects</span>
+              {affected.map((a) => (
+                <span key={a} className="rounded-full border border-white/[0.10] bg-white/[0.04] px-2 py-0.5 text-[11px] font-semibold text-white/75">
+                  {a}
+                </span>
+              ))}
+            </fm.div>
+          )}
+
+          {/* Metadata — single row, never wraps */}
+          <fm.div
+            variants={reduce ? undefined : item}
+            className="mt-5 flex items-center gap-2 whitespace-nowrap text-[12.5px] text-zinc-400"
+          >
+            <span className="flex min-w-0 items-center gap-1.5">
+              {signal.sourceKey && <BrandLogo source={signal.sourceKey} name={signal.source} size={15} />}
+              <span className="truncate font-semibold text-white/90">{signal.source}</span>
+            </span>
+            <span className="shrink-0 text-zinc-600">·</span>
+            <span className="shrink-0 text-zinc-400">{categoryLabel(signal)}</span>
+            <span className="shrink-0 text-zinc-600">·</span>
+            <span className="inline-flex shrink-0 items-center gap-1"><Clock className="h-3.5 w-3.5" />{readMins(signal)} min</span>
+            <span className="shrink-0 text-zinc-600">·</span>
+            <span className="inline-flex shrink-0 items-center gap-1 font-mono-tight font-bold text-green">
+              <span className="text-zinc-500">Impact</span>{Math.round(signal.score)}
+            </span>
+          </fm.div>
+
+
+          <fm.div variants={reduce ? undefined : item} className="mt-auto flex items-stretch gap-2.5 pt-6">
+            <fm.button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); openOriginal(signal.url); }}
+              whileHover={reduce ? undefined : { scale: 1.02 }}
+              whileTap={reduce ? undefined : { scale: 0.97 }}
+              transition={{ type: "spring", stiffness: 360, damping: 22 }}
+              className="inline-flex h-12 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-green px-4 text-[14.5px] font-bold text-black shadow-[0_6px_22px_hsl(152_72%_48%/0.28)] transition-colors hover:bg-green/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0d0a]"
+            >
+              Read Story <ArrowRight className="h-4 w-4 stroke-[2.5]" />
+            </fm.button>
+            <AiIntelligenceButton
+              article={{
+                title: signal.title,
+                summary: signal.whatHappened,
+                why_it_matters: signal.takeaway,
+                tag: signal.tag,
+                source: signal.source,
+                sourceKey: signal.sourceKey ?? "",
+                url: signal.url ?? "",
+                verified: true,
+              }}
+              className="h-12 flex-1"
+            />
+          </fm.div>
+        </fm.div>
+      </AnimatePresence>
+    </fm.article>
+  );
+}
+
+// ── Editorial loading skeleton (shimmer, matches the card's rhythm) ────────
+export function TopStoryCardSkeleton({ className = "" }: { className?: string }) {
+  return (
+    <div className={`relative flex min-h-[300px] w-full flex-col overflow-hidden rounded-[28px] border border-white/[0.06] bg-[#0a0d0a]/95 p-6 sm:p-7 ${className}`} aria-hidden>
+      <div className="motion-wave-shimmer mb-4 h-6 w-24 rounded-full" />
+      <div className="motion-wave-shimmer mb-2.5 h-7 w-[92%] rounded-lg" />
+      <div className="motion-wave-shimmer mb-2.5 h-7 w-[78%] rounded-lg" />
+      <div className="motion-wave-shimmer mb-5 h-7 w-[46%] rounded-lg" />
+      <div className="motion-wave-shimmer mb-2 h-4 w-[88%] rounded" />
+      <div className="motion-wave-shimmer h-4 w-[64%] rounded" />
+      <div className="motion-wave-shimmer mt-5 h-4 w-40 rounded" />
+      <div className="mt-auto flex gap-2.5 pt-6">
+        <div className="motion-wave-shimmer h-12 flex-1 rounded-2xl" />
+        <div className="motion-wave-shimmer h-12 flex-1 rounded-2xl" />
+      </div>
+    </div>
+  );
+}
