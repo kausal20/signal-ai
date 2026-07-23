@@ -6,7 +6,11 @@
 import type { FeedItem } from "@/data/feed";
 import type { Project as ProdProject } from "@/lib/projects";
 import { computeUpdates, stageProgress } from "@/lib/projects";
-import { whyThisMatters, ctaForOpportunity, shortRecommendation } from "@/lib/recommend";
+import {
+  whyThisMatters,
+  buildWhyItMatters, executiveSummary, heroBadge, trustSignals, isOfficialItem,
+  type WhyProfile,
+} from "@/lib/recommend";
 import type {
   Signal, Recommendation, Project, PlanStep, SourceKey,
   TrendingTerm, Collection, SourceSummary,
@@ -214,16 +218,38 @@ export function mapSignal(item: FeedItem, saved: boolean): Signal {
   };
 }
 
-// FeedItem (hero pick) → ui-v2 Recommendation. Reuses recommend.ts voice/CTA.
-export function mapRecommendation(item: FeedItem, saved: boolean): Recommendation {
+// FeedItem (hero pick) → ui-v2 Recommendation — the "My Pick" intelligence
+// briefing. Headline, summary, personalized reasons, badge, and trust signals
+// are all derived from real backend intelligence (entities, impact, source,
+// timestamp) + the learned user profile. Nothing hardcoded.
+export function mapRecommendation(
+  item: FeedItem,
+  saved: boolean,
+  profile?: WhyProfile,
+  savedEntities?: Set<string>,
+): Recommendation {
   const opp = item.intel?.opportunity;
+  const brandIdentity = sourceIdentityFor(item);
+  const official = isOfficialItem(item, brandIdentity.key);
+  const badge = heroBadge(item, official);
   return {
     id: item.id,
     type: opp?.type ?? item.tag ?? "signal",
-    title: opp?.title ?? shortRecommendation(item),
+    // The real story headline (what happened) — not the opportunity pitch.
+    title: item.title,
     reason: whyThisMatters(item),
+    summary: executiveSummary(item),
+    reasons: buildWhyItMatters(item, {
+      brand: brandIdentity.label,
+      brandKey: brandIdentity.key,
+      profile,
+      savedEntities,
+    }),
+    badge,
+    trust: trustSignals(item, official, badge?.label),
+    official,
     conviction: Math.round(item.intel?.signalScore ?? item.score ?? 0),
-    ctaLabel: ctaForOpportunity(item),
+    ctaLabel: "Explore Story",
     saved,
   };
 }

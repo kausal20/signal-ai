@@ -11,9 +11,52 @@
 // }
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import {
-  toTsQuery, scoreCandidate, relatedTopics, didYouMean, expandQuery,
+  toTsQuery, scoreCandidate, didYouMean, expandQuery,
   type SearchCandidate,
 } from "../_shared/search.ts";
+import { relatedProducts } from "../_shared/related_products.ts";
+
+interface SearchRpcRow extends SearchCandidate {
+  section?: string;
+  is_official_source?: boolean;
+  is_official_company_news?: boolean;
+  source_type?: string;
+  trust_score?: number;
+  publisher?: string;
+  publisher_domain?: string;
+  rank?: number;
+  event_type?: string;
+}
+
+function logSearchTiers(q: string, rows: SearchRpcRow[]): void {
+  const official = rows.filter((r) => r.section === "official" || r.is_official_source);
+  const media = rows.filter((r) => r.section === "analysis" && !r.is_official_source);
+  const other = rows.length - official.length - media.length;
+  console.info("[search] Tier breakdown", {
+    q,
+    total: rows.length,
+    official_count: official.length,
+    media_count: media.length,
+    other_count: other,
+    top: rows.slice(0, 8).map((r) => ({
+      section: r.section ?? null,
+      is_official_source: r.is_official_source ?? false,
+      is_official_company_news: r.is_official_company_news ?? false,
+      source_type: r.source_type ?? null,
+      trust_score: r.trust_score ?? null,
+      publisher: r.publisher ?? r.source ?? null,
+      rank: r.rank ?? null,
+      title: (r.title ?? "").slice(0, 80),
+      reason: r.section === "official"
+        ? "official_source_section"
+        : r.is_official_source
+          ? "is_official_source"
+          : r.section === "analysis"
+            ? "media_coverage"
+            : r.section ?? "free_text_or_other",
+    })),
+  });
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -49,7 +92,8 @@ Deno.serve(async (req) => {
     console.info("[search] Returning trending fallback", { q, returnedCount: data?.length ?? 0, reason: extra.note ?? "no_direct_match" });
     return json({
       results: data ?? [],
-      related: [], suggestions: didYouMean(q),
+      related: [], related_products: [], related_fallback: "none",
+      suggestions: didYouMean(q),
       total_results: (data ?? []).length,
       search_time: Date.now() - t0, matched_fields: [],
       fallback: "trending", ...extra,
@@ -74,10 +118,12 @@ Deno.serve(async (req) => {
       return await trendingFallback({ note: "search_rpc_error" });
     }
 
-    const rows = (data ?? []) as SearchCandidate[];
+    const rows = (data ?? []) as SearchRpcRow[];
 
     // No hits anywhere in the archive → still never empty: trending + suggestion.
     if (rows.length === 0) return await trendingFallback();
+
+    logSearchTiers(q, rows);
 
     // PRESERVE the RPC ordering. signal_search already orders results correctly:
     // for an entity query it returns the entity's COMPLETE archive history newest
@@ -91,14 +137,29 @@ Deno.serve(async (req) => {
     const matched = Array.from(new Set(annotated.flatMap((r) => r.matched_fields)));
     console.info("[search] Results ready", { q, inputCount: rows.length, returnedCount: results.length, matchedFields: matched });
 
-    // Related: alias/adjacent terms + entities from the top results.
-    const entityRelated = annotated.slice(0, 3).flatMap((r) => r.item.trend_entities ?? []);
-    const related = Array.from(new Set([...relatedTopics(q), ...entityRelated])).slice(0, 8);
+    // Related PRODUCTS — derived from Entity Intelligence (co-mentions in the
+    // entity_article_links graph, ranked products > companies > tech). Falls
+    // back to trend entities from top results only if entity resolution fails.
+    let relatedProductsList: { name: string; type: string; slug: string }[] = [];
+    let relatedFallback: "products" | "companies" | "technologies" | "none" = "none";
+    try {
+      const rp = await relatedProducts(supabase, q, 8);
+      relatedProductsList = rp.items;
+      relatedFallback = rp.fallback;
+    } catch (e) {
+      console.error("[search] relatedProducts failed", e instanceof Error ? e.message : e);
+    }
+    // Legacy `related` string[] kept for backwards compat — reuse the products.
+    const related = relatedProductsList.length > 0
+      ? relatedProductsList.map((p) => p.name)
+      : Array.from(new Set(annotated.slice(0, 3).flatMap((r) => r.item.trend_entities ?? []))).slice(0, 8);
 
-    console.info("[search] Returning results", { q, returnedCount: results.length });
+    console.info("[search] Returning results", { q, returnedCount: results.length, relatedCount: relatedProductsList.length, relatedFallback });
     return json({
       results,
       related,
+      related_products: relatedProductsList,
+      related_fallback: relatedFallback,
       suggestions: annotated.length <= 1 ? didYouMean(q) : [],
       total_results: results.length,
       search_time: Date.now() - t0,

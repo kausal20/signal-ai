@@ -5,9 +5,9 @@ import {
   Bookmark, Play, Clock, Zap, Check, Circle, Plus, Minus,
 } from "lucide-react";
 import { usePersonalizedFeed } from "@/hooks/usePersonalizedFeed";
+import { useAdvisorFallback } from "@/hooks/useAdvisorFallback";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { BottomNav } from "@/components/BottomNav";
-import { SignalScoreRing } from "@/components/SignalScoreRing";
 import { startProject, getProject } from "@/lib/projects";
 import { track, trackOutcome } from "@/lib/signals";
 import { AdvisorPage } from "@/ui-v2/pages/AdvisorPage";
@@ -32,8 +32,25 @@ export default function Advisor() {
     [items],
   );
 
-  const hero = (advisor?.best_opportunity_today && byId.get(advisor.best_opportunity_today.id))
+  // Real "saved similar" signal: entities the user has actually bookmarked. Feeds
+  // the personalized "Why this matters to you" reasons — never fabricated.
+  const savedEntities = useMemo(() => {
+    const set = new Set<string>();
+    for (const it of items) {
+      if (!bookmarks.includes(it.id)) continue;
+      for (const e of it.trend_entities ?? []) set.add(String(e).toLowerCase());
+    }
+    return set;
+  }, [items, bookmarks]);
+
+  // Personalized hero. When feed_items is stale/empty this is undefined — the
+  // fallback hook below then picks a hero from the Content Archive (trending →
+  // high-impact → latest official) so this section is never blank.
+  const personalizedHero = (advisor?.best_opportunity_today && byId.get(advisor.best_opportunity_today.id))
     ?? ranked.find((i) => i.intel?.opportunity) ?? ranked[0];
+  const fallback = useAdvisorFallback(personalizedHero);
+  const hero = fallback.hero;
+  const usingFallback = fallback.source !== "personalized" && fallback.source !== "none";
   const tool = (advisor?.tool_worth_trying && byId.get(advisor.tool_worth_trying.id)) ?? ranked.find((i) => i.tag === "tool");
   const workflow = ranked.find((i) => i.tag === "use-case") ?? ranked.find((i) => i.intel?.action);
   const trendItem = ranked.find((i) => i.intel?.trend?.name);
@@ -72,8 +89,8 @@ export default function Advisor() {
   const toggleDone = (id: string) =>
     setDone((prev) => prev.includes(id) ? prev.filter((p) => p !== id) : (trackOutcome("action_completed", id), [...prev, id]));
 
-  const loading = status.loading && items.length === 0;
-  const heroScore = hero ? (hero.intel?.signalScore ?? hero.score) : 0;
+  // Only "loading" when BOTH the personalized fetch AND the archive fallback are still resolving.
+  const loading = (status.loading && items.length === 0) && fallback.loading;
 
   // ── P2: ui-v2 Advisor ───────────────────────────────────────────────────
   // Presentation swap only. Same hooks, same derived data (hero/whyRows/actions
@@ -93,13 +110,41 @@ export default function Advisor() {
     return (
       <AdvisorPage
         greeting={`${name}, here's your focus.`}
-        recommendation={mapRecommendation(hero, bookmarks.includes(hero.id))}
-        reasons={whyRows}
+        recommendation={mapRecommendation(hero, bookmarks.includes(hero.id), profile as any, savedEntities)}
         plan={mapPlanSteps(actions, done)}
         project={mapProject(getProject(), items) ?? undefined}
         bookmarkCount={bookmarks.length}
         onNavigate={navSection}
-        onStart={() => { startProject(hero); trackOutcome("built", hero.id); track("opened", { feed_item_id: hero.id }); }}
+        onAsk={() => {
+          track("opened", { feed_item_id: hero.id });
+          navigate("/", {
+            state: {
+              openAsk: true,
+              article: {
+                article_id: hero.id,
+                headline: hero.title,
+                summary: (hero as any).what_happened ?? hero.summary,
+                publisher: hero.sourceLabel ?? hero.source,
+                published_at: hero.timestamp,
+                source_type: hero.intel?.whyPicked?.some((w) => /official/i.test(w)) ? "OFFICIAL_SOURCE" : undefined,
+                impact_score: Math.round(hero.intel?.signalScore ?? hero.score ?? 0),
+                event_type: hero.category,
+                article_url: hero.url,
+              },
+            },
+          });
+        }}
+        onStart={() => {
+          // Track + register the project (existing behaviour), then actually OPEN
+          // the article. The button previously only wrote to localStorage, so
+          // users saw nothing happen. Prefer the archive's real publisher URL
+          // (original_url via hero.url); fall back to `url`.
+          startProject(hero);
+          trackOutcome("built", hero.id);
+          track("opened", { feed_item_id: hero.id });
+          const target = hero.url && /^https?:\/\//i.test(hero.url) ? hero.url : null;
+          if (target) window.open(target, "_blank", "noopener,noreferrer");
+        }}
         onToggleSave={(id) => toggleBookmark(id)}
         onToggleStep={(id) => toggleDone(id)}
       />
@@ -136,11 +181,10 @@ export default function Advisor() {
 
             {/* SECTION 2 — Hero (the only dominant element) */}
             <article className="green-halo p-6 animate-scale-in">
-              <div className="flex items-start justify-between gap-4 mb-4">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-green flex items-center gap-1.5 mt-1">
+              <div className="mb-4">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-green flex items-center gap-1.5">
                   <Rocket className="w-3.5 h-3.5" /> {hero.intel?.opportunity?.type ?? "Opportunity"}
                 </span>
-                <SignalScoreRing score={heroScore} size={64} showLabel className="shrink-0" />
               </div>
 
               <h1 className="text-[22px] sm:text-[26px] font-extrabold leading-[1.15] tracking-tight">

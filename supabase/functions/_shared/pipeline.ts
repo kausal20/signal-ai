@@ -91,16 +91,20 @@ export async function runPipeline(input: OrchestratorInput): Promise<Orchestrato
     record(sr);
   }
 
-  // Stage 5: cluster + prioritize.
+  // Stage 5: cluster + prioritize. Cap at 48 (was 84): the feed only publishes
+  // ~12, and every extra cluster costs an AI editorial call downstream. 48 keeps
+  // ample editorial breadth while guaranteeing the pre-upsert chain finishes
+  // inside the edge wall-clock, even with a large 24h raw backlog.
   const clusterRes = await runStage("cluster", async () => {
-    return clusterRaw(accepted).sort((a, b) => clusterPriority(b) - clusterPriority(a)).slice(0, 84);
+    return clusterRaw(accepted).sort((a, b) => clusterPriority(b) - clusterPriority(a)).slice(0, 48);
   }, { logger });
   record(clusterRes);
   const clusters: StoryCluster[] = clusterRes.value ?? [];
   logger.info("clusters_created", { stage: "cluster", meta: { count: clusters.length, multi: clusters.filter((c) => c.members.length >= 2).length } });
 
-  // Stage 6: full article extraction (best-effort, degraded on failure).
-  const extractRes = await runStage("extract", () => enrichClusters(clusters, 28), { logger });
+  // Stage 6: full article extraction (best-effort, degraded on failure). Capped
+  // at 16 network fetches so this stage can't dominate the time budget.
+  const extractRes = await runStage("extract", () => enrichClusters(clusters, 16), { logger });
   record(extractRes);
 
   // Stage 7+8: AI editorial with circuit breaker → deterministic fallback.
@@ -114,8 +118,20 @@ export async function runPipeline(input: OrchestratorInput): Promise<Orchestrato
     let aiCalls = 0;
     let aiFailures = 0;
 
+    // Hard time budget: AI editorial is the most expensive pre-upsert stage.
+    // If the gateway is slow, cap the AI portion at 90s and deterministically
+    // curate any remaining clusters so the pipeline ALWAYS reaches the publish
+    // stage (feed_items upsert) inside the edge wall-clock. Without this, a slow
+    // gateway + large backlog kills the function before feed_items is written.
+    const editorialDeadline = Date.now() + 80_000;
     if (breaker.canAttempt()) {
       for (let i = 0; i < clusters.length; i += 7) {
+        if (Date.now() > editorialDeadline) {
+          const remaining = clusters.slice(i);
+          curated.push(...fallbackCurate(remaining));
+          logger.warn("editorial_budget_exhausted", { stage: "editorial", meta: { curatedSoFar: curated.length, fallbackClusters: remaining.length } });
+          break;
+        }
         aiCalls++;
         try {
           const { items, ok, audits } = await curateClustersAI(clusters.slice(i, i + 7), breaker);
@@ -138,10 +154,27 @@ export async function runPipeline(input: OrchestratorInput): Promise<Orchestrato
     else if (aiCalls > 0 || !breaker.canAttempt()) await breaker.recordFailure(sb, "ai gateway empty/failed");
 
     let mode: "ai" | "fallback" = "ai";
-    if (curated.length === 0 && clusters.length > 0) {
-      mode = "fallback";
-      logger.warn("ai_fallback_used", { stage: "editorial", source: "ai_gateway", meta: { aiCalls, aiFailures } });
-      curated.push(...fallbackCurate(clusters));
+    // Healthy-feed floor. The AI editor is deliberately ruthless (ships "5
+    // unforgettable over 100 average"), which starved feed_items down to 1-4.
+    // The user's requirement is a continuously-fresh feed, so whenever the AI
+    // approves fewer than the target, top up from the DETERMINISTIC curator —
+    // which enforces its own quality gates (leverage>=6, full editorial gate in
+    // buildSignalItem), so this raises volume without publishing junk. AI-written
+    // items always win in ranking; the fallbacks only fill remaining slots.
+    const FEED_FLOOR = 10;
+    if (clusters.length > 0 && curated.length < FEED_FLOOR) {
+      const have = new Set(curated.map((c) => c.id));
+      const supplement = fallbackCurate(clusters).filter((it) => !have.has(it.id));
+      if (supplement.length > 0) {
+        curated.push(...supplement);
+        logger.info("feed_floor_topup", { stage: "editorial", meta: { aiCurated: have.size, supplemented: supplement.length, total: curated.length } });
+      }
+      if (curated.length === 0) {
+        mode = "fallback";
+        logger.warn("ai_fallback_used", { stage: "editorial", source: "ai_gateway", meta: { aiCalls, aiFailures } });
+      } else if (!aiOk) {
+        mode = "fallback";
+      }
     } else if (!aiOk) {
       mode = "fallback";
     }
@@ -260,7 +293,16 @@ export async function runPipeline(input: OrchestratorInput): Promise<Orchestrato
     let reasoned = 0;
     // V4 CAP 4: multi-agent reasoning per story (cached, reused by all users).
     // CAP 5: attach deterministic ROI. Small concurrency for gateway limits.
+    // Time-budgeted: this stage runs AFTER feed_items is already committed, so
+    // if the gateway is slow we stop reasoning (story_intelligence stays partial
+    // — degraded, not blocking) and let the function return + mark the run done,
+    // instead of being killed at the wall-clock and stuck in status=running.
+    const reasoningDeadline = Date.now() + 30_000;
     for (let i = 0; i < daily.length; i += 3) {
+      if (Date.now() > reasoningDeadline) {
+        logger.warn("reasoning_budget_exhausted", { stage: "reasoning", meta: { reasoned, total: daily.length } });
+        break;
+      }
       const batch = daily.slice(i, i + 3);
       const results = await Promise.all(batch.map(async (item) => {
         const story = item as unknown as StoredStory;

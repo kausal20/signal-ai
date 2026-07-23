@@ -7,6 +7,20 @@
 export const CANONICAL_GROUPS = ["Developers", "Students", "Businesses", "Creators", "Researchers"] as const;
 export type Group = (typeof CANONICAL_GROUPS)[number];
 
+// Section 3 — "Should You Care?" star ratings, fixed audience set + order.
+export const AUDIENCES = [
+  "Developers", "Startups", "Enterprises", "Students", "Researchers", "Investors", "Content Creators",
+] as const;
+
+const NOT_ENOUGH = "Not enough reliable information.";
+
+// Grounding assembled by the edge function (entity + archive), passed to buildPrompt.
+export interface GroundingContext {
+  entityName?: string;
+  entityFacts?: string[];       // official channels, description, competitors, products
+  relatedHeadlines?: string[];  // recent archive headlines about the entity
+}
+
 export const EVENT_TYPES = [
   "Product Launch", "Funding", "Research", "Acquisition", "Partnership",
   "Security", "Legal", "Interview", "Open Source", "Benchmark", "Official Blog", "News",
@@ -52,6 +66,11 @@ export interface Intelligence {
   related_companies: string[];     // up to 8 (tappable → search)
   impact_score: number;            // 0..100
   confidence: number;              // 0..100
+  // ── Full Signal Analysis sections ──
+  relevance: { audience: string; stars: number }[];   // Section 3 (7 audiences, 1-5)
+  technology_breakdown: string[];                       // Section 7 (what changed technically)
+  scores: { business: number; technology: number; market: number; innovation: number }; // Section — scoring
+  confidence_label: "Low" | "Medium" | "High";
   // ── Legacy fields (kept for back-compat with the previous sheet) ──
   summary: string;
   why_it_matters: string;
@@ -82,6 +101,24 @@ export const RESPONSE_SCHEMA = {
     related_companies: { type: "array", items: { type: "string" } },
     impact_score: { type: "integer" },
     confidence: { type: "integer" },
+    relevance: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { audience: { type: "string" }, stars: { type: "integer" } },
+        required: ["audience", "stars"],
+      },
+    },
+    technology_breakdown: { type: "array", items: { type: "string" } },
+    scores: {
+      type: "object",
+      properties: {
+        business: { type: "integer" }, technology: { type: "integer" },
+        market: { type: "integer" }, innovation: { type: "integer" },
+      },
+      required: ["business", "technology", "market", "innovation"],
+    },
+    confidence_label: { type: "string", enum: ["Low", "Medium", "High"] },
   },
   required: [
     "event_type", "executive_summary", "why_matters", "who_wins", "who_loses",
@@ -89,13 +126,16 @@ export const RESPONSE_SCHEMA = {
   ],
 } as const;
 
-export function buildPrompt(a: ArticleInput): string {
+export function buildPrompt(a: ArticleInput, ctx: GroundingContext = {}): string {
   const parts = [
     `Headline: ${a.title}`,
     a.summary ? `Summary: ${a.summary}` : "",
     a.why_it_matters ? `Editor note: ${a.why_it_matters}` : "",
     a.source ? `Source: ${a.source}` : "",
     a.tag ? `Category: ${a.tag}` : "",
+    ctx.entityName ? `Primary company: ${ctx.entityName}` : "",
+    ctx.entityFacts?.length ? `Company facts (from Signal's registry):\n- ${ctx.entityFacts.join("\n- ")}` : "",
+    ctx.relatedHeadlines?.length ? `Related archive headlines:\n- ${ctx.relatedHeadlines.slice(0, 8).join("\n- ")}` : "",
   ].filter(Boolean).join("\n");
 
   return [
@@ -122,9 +162,14 @@ export function buildPrompt(a: ArticleInput): string {
     "- related_companies: up to 8 company/product names actually relevant to this story.",
     "- impact_score: integer 0-100 (importance + industry impact + long-term relevance).",
     "- confidence: integer 0-100 (your confidence given the input).",
+    `- relevance: rate EACH audience 1-5 stars — ${AUDIENCES.join(", ")}. Array of {"audience","stars"}.`,
+    "- technology_breakdown: 3-6 bullets on what changed technically, in simple words (empty if not a technical story).",
+    "- scores: object {business,technology,market,innovation} each integer 0-100.",
+    "- confidence_label: one of Low / Medium / High.",
+    `- If evidence is missing for a field, use "${NOT_ENOUGH}" (or [] for arrays). NEVER invent facts, numbers, dates, or quotes beyond the grounding context + widely-known background.`,
     "- Return JSON ONLY. No markdown, no code fences, no prose outside the JSON.",
     "",
-    "Article:",
+    "Article + grounding:",
     parts,
   ].join("\n");
 }
@@ -201,11 +246,133 @@ export function validateIntelligence(raw: unknown): Intelligence {
     related_companies: strArray(r.related_companies, 8, 40),
     impact_score: impact,
     confidence: clampInt(r.confidence, 0, 100, 60),
+    relevance: (() => {
+      const by = new Map<string, number>();
+      for (const it of Array.isArray(r.relevance) ? r.relevance : []) {
+        if (it && typeof it === "object") by.set(str((it as Record<string, unknown>).audience, 40).toLowerCase(), clampInt((it as Record<string, unknown>).stars, 1, 5, 3));
+      }
+      return AUDIENCES.map((audience) => ({ audience, stars: by.get(audience.toLowerCase()) ?? 3 }));
+    })(),
+    technology_breakdown: strArray(r.technology_breakdown, 6, 200),
+    scores: (() => {
+      const sc = (r.scores && typeof r.scores === "object") ? r.scores as Record<string, unknown> : {};
+      return {
+        business: clampInt(sc.business, 0, 100, 55),
+        technology: clampInt(sc.technology, 0, 100, 55),
+        market: clampInt(sc.market, 0, 100, 55),
+        innovation: clampInt(sc.innovation, 0, 100, 55),
+      };
+    })(),
+    confidence_label: (() => {
+      const v = str(r.confidence_label, 10).toLowerCase();
+      return (["Low", "Medium", "High"].find((x) => x.toLowerCase() === v) ?? "Medium") as Intelligence["confidence_label"];
+    })(),
     // Legacy mirrors.
     summary: executive_summary,
     why_it_matters: [why_matters.business, why_matters.technology, why_matters.market].filter(Boolean).join(" ") || str(r.why_it_matters, 800),
     affected_groups,
     importance_score: impact,
     related_topics: strArray(r.related_topics, 8, 40),
+  };
+}
+
+// ── Phased generation ────────────────────────────────────────────────────────
+// The report is generated as two parallel phases so the first useful content
+// reaches the user in ~2-3s instead of waiting for the whole report:
+//   core → event/exec summary/why-it-matters/relevance/impact  (small + fast)
+//   deep → wins/losses/market/tech/timeline/takeaways/companies (larger)
+export type AnalysisPhase = "core" | "deep" | "full";
+
+function groundingBlock(a: ArticleInput, ctx: GroundingContext): string {
+  return [
+    `Headline: ${a.title}`,
+    a.summary ? `Summary: ${a.summary}` : "",
+    a.why_it_matters ? `Editor note: ${a.why_it_matters}` : "",
+    a.source ? `Source: ${a.source}` : "",
+    ctx.entityName ? `Primary company: ${ctx.entityName}` : "",
+    ctx.entityFacts?.length ? `Company facts:\n- ${ctx.entityFacts.join("\n- ")}` : "",
+    ctx.relatedHeadlines?.length ? `Related archive headlines:\n- ${ctx.relatedHeadlines.slice(0, 8).join("\n- ")}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+const PHASE_RULES = [
+  "HARD RULES:",
+  "- Ground every claim in the supplied context. NEVER invent facts, numbers, dates, or quotes.",
+  `- If evidence is missing, output "${NOT_ENOUGH}" (or [] for arrays).`,
+  "- Specific and concrete. No hype, no vague filler.",
+  "- Return JSON ONLY. No markdown, no code fences, no prose outside the JSON.",
+].join("\n");
+
+export function buildPhasePrompt(a: ArticleInput, ctx: GroundingContext, phase: AnalysisPhase): string {
+  if (phase === "full") return buildPrompt(a, ctx);
+  const head = "You are Signal's senior AI-industry intelligence analyst (Bloomberg grade).";
+  if (phase === "core") {
+    return [
+      head, "Return ONLY these fields, as one JSON object:",
+      `{"event_type":"one of: ${EVENT_TYPES.join("|")}",`,
+      '"executive_summary":"<=120 words, plain English: what happened + the essential context",',
+      '"why_matters":{"business":"1-2 concrete sentences","technology":"1-2 concrete sentences","market":"1-2 concrete sentences"},',
+      `"relevance":[${AUDIENCES.map((x) => `{"audience":"${x}","stars":1-5}`).join(",")}],`,
+      '"impact_score":0-100,"confidence":0-100,"confidence_label":"Low|Medium|High"}',
+      "", PHASE_RULES, "", "Story:", groundingBlock(a, ctx),
+    ].join("\n");
+  }
+  return [
+    head, "Return ONLY these fields, as one JSON object:",
+    '{"who_wins":["up to 5 short labels"],"who_loses":["up to 5 short labels"],',
+    '"market_impact":"1-3 sentences: pricing, competition, adoption, implications",',
+    '"technology_breakdown":["3-6 bullets: what changed technically, in simple words"],',
+    '"timeline":{"past":"what led here","present":"what just happened","next":"what to expect"},',
+    '"key_takeaways":["3-5 concise bullets"],"related_companies":["up to 8 names"],',
+    '"scores":{"business":0-100,"technology":0-100,"market":0-100,"innovation":0-100}}',
+    "", PHASE_RULES, "", "Story:", groundingBlock(a, ctx),
+  ].join("\n");
+}
+
+/** Validate one phase's payload into a partial report (merged client-side). */
+export function validatePhase(raw: unknown, phase: AnalysisPhase): Partial<Intelligence> {
+  if (phase === "full") return validateIntelligence(raw);
+  if (!raw || typeof raw !== "object") throw new Error("analysis: non-object payload");
+  const r = raw as Record<string, unknown>;
+
+  if (phase === "core") {
+    const executive_summary = str(r.executive_summary, 1200) || str(r.summary, 1200);
+    if (!executive_summary) throw new Error("analysis: missing executive_summary");
+    const wm = (r.why_matters && typeof r.why_matters === "object") ? r.why_matters as Record<string, unknown> : {};
+    const why_matters: WhyMatters = { business: str(wm.business, 400), technology: str(wm.technology, 400), market: str(wm.market, 400) };
+    const by = new Map<string, number>();
+    for (const it of Array.isArray(r.relevance) ? r.relevance : []) {
+      if (it && typeof it === "object") by.set(str((it as Record<string, unknown>).audience, 40).toLowerCase(), clampInt((it as Record<string, unknown>).stars, 1, 5, 3));
+    }
+    const impact = clampInt(r.impact_score ?? r.importance_score, 0, 100, 60);
+    const cl = str(r.confidence_label, 10).toLowerCase();
+    return {
+      event_type: normalizeEventType(r.event_type),
+      executive_summary,
+      summary: executive_summary,
+      why_matters,
+      why_it_matters: [why_matters.business, why_matters.technology, why_matters.market].filter(Boolean).join(" "),
+      relevance: AUDIENCES.map((audience) => ({ audience, stars: by.get(audience.toLowerCase()) ?? 3 })),
+      impact_score: impact,
+      importance_score: impact,
+      confidence: clampInt(r.confidence, 0, 100, 60),
+      confidence_label: (["Low", "Medium", "High"].find((x) => x.toLowerCase() === cl) ?? "Medium") as Intelligence["confidence_label"],
+    };
+  }
+
+  const tl = (r.timeline && typeof r.timeline === "object") ? r.timeline as Record<string, unknown> : {};
+  const sc = (r.scores && typeof r.scores === "object") ? r.scores as Record<string, unknown> : {};
+  return {
+    who_wins: strArray(r.who_wins, 5, 40),
+    who_loses: strArray(r.who_loses, 5, 40),
+    market_impact: str(r.market_impact, 800),
+    technology_breakdown: strArray(r.technology_breakdown, 6, 200),
+    timeline: { past: str(tl.past, 300), present: str(tl.present, 300), next: str(tl.next, 300) },
+    key_takeaways: strArray(r.key_takeaways, 5),
+    related_companies: strArray(r.related_companies, 8, 40),
+    scores: {
+      business: clampInt(sc.business, 0, 100, 55), technology: clampInt(sc.technology, 0, 100, 55),
+      market: clampInt(sc.market, 0, 100, 55), innovation: clampInt(sc.innovation, 0, 100, 55),
+    },
   };
 }

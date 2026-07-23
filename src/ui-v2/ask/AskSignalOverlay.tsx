@@ -1,12 +1,14 @@
 // signal-ui-v2 · ask/AskSignalOverlay.tsx
 // ---------------------------------------------------------------------------
-// The Ask Signal experience — a full-surface overlay that morphs out of the
-// launcher (shared layoutId), then hosts the AI Intelligence Assistant: a live
-// empty state, animated prompt cards, a premium composer, streaming chat
-// bubbles, a thinking indicator, and related-question follow-ups.
+// The Ask Signal experience — a full-screen overlay portaled into the
+// PhoneFrame's overlay root (outside the clipping scroll container), so it
+// fills the entire phone viewport. Slides up from the bottom with a spring
+// animation, hosts the AI Intelligence Assistant: empty state, prompt cards,
+// premium composer, streaming chat, thinking indicator, and follow-ups.
 // Presentation-only; talks to the ask-signal function via useAskSignal.
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AnimatePresence, motion as fm, useMotionValue, useReducedMotion, type Variants,
 } from "framer-motion";
@@ -15,6 +17,7 @@ import {
   Sparkles, Code2, GitCompare, Lightbulb, Newspaper, Server,
 } from "lucide-react";
 import { useAskSignal, type AskMessage } from "@/hooks/useAskSignal";
+import type { ArticleContext } from "@/lib/askSignal";
 import { Markdown } from "./Markdown";
 
 // Bottom-sheet slide (up on open, down on close). Firm enough to feel snappy,
@@ -177,11 +180,32 @@ function MessageBubble({ m, onAsk, reduce }: { m: AskMessage; onAsk: (q: string)
   );
 }
 
-interface Props { onClose: () => void; }
+interface Props { onClose: () => void; context?: ArticleContext; }
 
-export function AskSignalOverlay({ onClose }: Props) {
+/** Dynamic starter questions built from the article's own context. */
+function contextQuestions(c: ArticleContext): string[] {
+  const who = c.primary_entity || c.headline.split(/[:—-]/)[0].trim().split(" ").slice(0, 3).join(" ");
+  const rival = (c.related_entities ?? []).find((e) => e && e !== c.primary_entity);
+  return [
+    "Why does this matter?",
+    "Explain in simple words",
+    rival ? `Compare with ${rival}` : "Compare with competitors",
+    "Business impact",
+    "What changed technically?",
+    "Who benefits?",
+    who ? `Show previous ${who} launches` : "Show previous launches",
+    "Summarize in 30 seconds",
+  ];
+}
+
+export function AskSignalOverlay({ onClose, context }: Props) {
   const reduce = useReducedMotion();
-  const { messages, status, send, stop, newChat, busy } = useAskSignal();
+  // Local, clearable copy of the incoming article context so "Clear Story"
+  // returns Signal AI to its normal Home without changing routes/pages.
+  const [ctx, setCtx] = useState<ArticleContext | undefined>(context);
+  useEffect(() => { setCtx(context); }, [context]);
+  const clearContext = () => setCtx(undefined);
+  const { messages, status, send, stop, newChat, busy } = useAskSignal(ctx);
   const [input, setInput] = useState("");
   const [focused, setFocused] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -191,17 +215,48 @@ export function AskSignalOverlay({ onClose }: Props) {
   const empty = messages.length === 0;
   const name = useMemo(userName, []);
 
-  // Escape to close.
+  // Escape to close + lock background scroll while the assistant is mounted, so
+  // the Home page behind cannot move under the full-screen workspace.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const scrollEl = document.querySelector<HTMLElement>("[data-home-scroll]");
+    const prevHomeOverflow = scrollEl?.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    if (scrollEl) scrollEl.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      if (scrollEl) scrollEl.style.overflow = prevHomeOverflow ?? "";
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+    };
   }, [onClose]);
 
-  // Auto-scroll to newest content while near the bottom.
+  // Always start at the top when the overlay opens or article context changes.
+  // Skip while the user has an active chat so mid-conversation scroll is preserved.
+  useEffect(() => {
+    if (messages.length > 0) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const reset = () => {
+      el.scrollTo({ top: 0, behavior: "auto" });
+      setScrolled(false);
+      setAtBottom(el.scrollHeight - el.clientHeight < 80);
+    };
+    reset();
+    requestAnimationFrame(reset);
+  }, [ctx, messages.length]);
+
+  // Auto-scroll to newest content while near the bottom (chat only — not the
+  // empty hero/suggestions view, which must stay pinned at scrollTop 0).
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && atBottom) el.scrollTo({ top: el.scrollHeight, behavior: reduce ? "auto" : "smooth" });
+    if (el && atBottom && messages.length > 0) {
+      el.scrollTo({ top: el.scrollHeight, behavior: reduce ? "auto" : "smooth" });
+    }
   }, [messages, atBottom, reduce]);
 
   const onScroll = () => {
@@ -227,34 +282,59 @@ export function AskSignalOverlay({ onClose }: Props) {
     requestAnimationFrame(() => { if (taRef.current) taRef.current.style.height = "auto"; });
   };
 
-  return (
-    <fm.div
-      // Bottom-sheet motion: rises from the bottom on open, drops back down on
-      // close. GPU transform only (y), so it stays smooth.
-      initial={reduce ? false : { y: "100%" }}
-      animate={reduce ? undefined : { y: 0 }}
-      exit={reduce ? { opacity: 0 } : { y: "100%" }}
-      transition={reduce ? { duration: 0.2 } : ENTRY}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Ask Signal"
-      className="fixed inset-0 z-[95] flex flex-col overflow-hidden bg-[#040604] will-change-transform"
-    >
+  // Portal target lives inside PhoneFrame but OUTSIDE the overflow-clipping
+  // content wrapper, so the overlay can fill the full phone viewport.
+  const portalTarget = document.getElementById("signal-overlay-root");
+
+  const overlay = (
+    <>
+      {/* Backdrop — fully opaque once settled so the Home page is completely
+          hidden. The fade-in (opacity 0→1) briefly reveals Home during the
+          transition, then covers it entirely. */}
+      <fm.div
+        aria-hidden
+        initial={reduce ? { opacity: 1 } : { opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.24, ease: EASE }}
+        className="absolute inset-0 z-[94] bg-black"
+      />
+      <fm.div
+        // Full-screen motion: rises from the bottom on open, drops back down on
+        // close. Uses `y` so Framer animates via CSS transform only.
+        initial={reduce ? false : { y: "100%" }}
+        animate={reduce ? undefined : { y: "0%" }}
+        exit={reduce ? { opacity: 0 } : { y: "100%" }}
+        transition={reduce ? { duration: 0.2 } : ENTRY}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Signal AI"
+        className="absolute inset-0 z-[95] flex flex-col overflow-hidden bg-[#040604] text-foreground will-change-transform"
+        style={{
+          // Respect the safe area at the top (iOS notch / status bar).
+          paddingTop: "env(safe-area-inset-top)",
+        }}
+      >
       <BackgroundMesh reduce={!!reduce} />
 
-      {/* HEADER — glass, shrinks on scroll */}
+      {/* Grab handle — mobile sheet cue */}
+      <div aria-hidden className="relative z-10 flex shrink-0 justify-center pt-2 pb-1">
+        <span className="h-[5px] w-10 rounded-full bg-white/20" />
+      </div>
+
+      {/* HEADER — glass, shrinks on scroll. paddingTop is a plain style value so
+          the animation can freely control it without React duplicate-prop conflicts. */}
       <fm.header
         className="relative z-10 flex items-center gap-3 border-b border-white/[0.06] bg-[linear-gradient(to_bottom,rgba(4,6,4,0.9),rgba(4,6,4,0.6))] px-4 backdrop-blur-xl sm:px-5"
-        animate={{ paddingTop: scrolled ? 12 : 20, paddingBottom: scrolled ? 12 : 16 }}
+        animate={{ paddingTop: scrolled ? 10 : 16, paddingBottom: scrolled ? 12 : 16 }}
         transition={{ duration: 0.25, ease: EASE }}
-        style={{ paddingTop: 52 }}
       >
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-green/25 bg-green/[0.10] text-green shadow-[0_0_16px_hsl(152_72%_48%/0.2)]">
           <Brain className="h-[18px] w-[18px]" />
         </span>
         <div className="min-w-0 flex-1">
           <fm.h1 className="font-extrabold tracking-[-0.02em] text-foreground" animate={{ fontSize: scrolled ? 16 : 19 }} transition={{ duration: 0.25 }}>
-            Ask Signal
+            Signal AI
           </fm.h1>
           <AnimatePresence>
             {!scrolled && (
@@ -266,7 +346,7 @@ export function AskSignalOverlay({ onClose }: Props) {
           </AnimatePresence>
         </div>
 
-        <fm.button type="button" onClick={onClose} aria-label="Close Ask Signal"
+        <fm.button type="button" onClick={onClose} aria-label="Close Signal AI"
           whileHover={reduce ? undefined : { scale: 1.06 }} whileTap={reduce ? undefined : { scale: 0.92 }}
           className="flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.04] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green">
           <X className="h-4 w-4" />
@@ -274,10 +354,14 @@ export function AskSignalOverlay({ onClose }: Props) {
       </fm.header>
 
       {/* BODY */}
-      <div ref={scrollRef} onScroll={onScroll} className="relative z-10 min-h-0 flex-1 overflow-y-auto px-4 sm:px-5">
-        <div className="mx-auto w-full max-w-[760px]">
+      <div ref={scrollRef} onScroll={onScroll} className="no-scrollbar relative z-10 min-h-0 flex-1 overflow-y-auto overscroll-none px-4">
+        <div className="w-full">
           {empty ? (
-            <div className="flex min-h-[60vh] flex-col items-center justify-center py-8 text-center">
+            /* ── ONE Signal AI Home layout. When `ctx` (an article) is present,
+                 a Current Story card is inserted above the suggestions and the
+                 suggestions become article-scoped. Clearing `ctx` returns to the
+                 normal Home — no other page, no route change. */
+            <div className="flex flex-1 flex-col items-center py-8 text-center">
               {/* Breathing logo */}
               <fm.div className="relative mb-6 flex h-20 w-20 items-center justify-center"
                 animate={reduce ? undefined : { scale: [1, 1.04, 1] }} transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut" }}>
@@ -293,14 +377,61 @@ export function AskSignalOverlay({ onClose }: Props) {
               </fm.h2>
               <fm.p initial={reduce ? undefined : { opacity: 0 }} animate={reduce ? undefined : { opacity: 1 }} transition={{ delay: 0.1 }}
                 className="mt-1.5 text-[14px] text-muted-foreground">
-                What would you like to explore today?
+                {ctx ? "Continue asking about this story." : "What would you like to explore today?"}
               </fm.p>
 
-              <div className="mt-7 grid w-full grid-cols-1 gap-2.5 sm:grid-cols-2">
-                {SUGGESTIONS.map((s, i) => (
-                  <SuggestionCard key={s.label} icon={s.icon} label={s.label} reduce={!!reduce} delay={0.12 + i * 0.05}
-                    onClick={() => submit(s.q)} />
-                ))}
+              {/* CURRENT STORY card — only when opened with article context. */}
+              {ctx && (
+                <fm.div
+                  initial={reduce ? undefined : { opacity: 0, y: 10 }}
+                  animate={reduce ? undefined : { opacity: 1, y: 0 }}
+                  transition={{ duration: 0.28, ease: EASE, delay: 0.14 }}
+                  className="mt-6 w-full overflow-hidden rounded-[22px] border border-green/20 bg-white/[0.03] text-left backdrop-blur-xl"
+                >
+                  {ctx.image_url && <img src={ctx.image_url} alt="" className="h-28 w-full object-cover" loading="eager" />}
+                  <div className="p-4">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <span className="font-mono-tight text-[10px] font-bold uppercase tracking-[0.14em] text-green/80">Current Story</span>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); clearContext(); }}
+                        aria-label="Clear story context"
+                        className="inline-flex items-center gap-1 rounded-full border border-white/[0.10] bg-white/[0.04] px-2 py-0.5 text-[10.5px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        <X className="h-3 w-3" /> Clear
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {ctx.event_type && (
+                        <span className="rounded-full border border-green/25 bg-green/[0.08] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-green">
+                          {ctx.event_type}
+                        </span>
+                      )}
+                      {typeof ctx.impact_score === "number" && (
+                        <span className="rounded-full border border-white/[0.10] bg-white/[0.05] px-2 py-0.5 text-[10px] font-bold text-foreground/80">
+                          Impact {Math.round(ctx.impact_score)}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="mt-2 text-[16px] font-extrabold leading-snug tracking-[-0.02em] text-foreground">
+                      {ctx.headline}
+                    </h3>
+                    <p className="mt-1.5 text-[11.5px] text-muted-foreground">
+                      {ctx.publisher ?? "Signal archive"}
+                      {ctx.source_type ? ` · ${ctx.source_type.replace(/_/g, " ").toLowerCase()}` : ""}
+                    </p>
+                  </div>
+                </fm.div>
+              )}
+
+              <div className="mt-7 grid w-full grid-cols-1 gap-2.5">
+                {ctx
+                  ? contextQuestions(ctx).map((q, i) => (
+                      <SuggestionCard key={q} icon={Sparkles} label={q} reduce={!!reduce} delay={0.16 + i * 0.04} onClick={() => submit(q)} />
+                    ))
+                  : SUGGESTIONS.map((s, i) => (
+                      <SuggestionCard key={s.label} icon={s.icon} label={s.label} reduce={!!reduce} delay={0.12 + i * 0.05} onClick={() => submit(s.q)} />
+                    ))}
               </div>
             </div>
           ) : (
@@ -327,8 +458,8 @@ export function AskSignalOverlay({ onClose }: Props) {
       </AnimatePresence>
 
       {/* COMPOSER — sticky */}
-      <div className="relative z-10 border-t border-white/[0.06] bg-[linear-gradient(to_top,rgba(4,6,4,0.95),rgba(4,6,4,0.7))] px-4 pb-[max(14px,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl sm:px-5">
-        <div className="mx-auto w-full max-w-[760px]">
+      <div className="relative z-10 border-t border-white/[0.06] bg-[linear-gradient(to_top,rgba(4,6,4,0.95),rgba(4,6,4,0.7))] px-4 pb-[max(14px,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl">
+        <div className="w-full">
           <fm.div
             animate={reduce ? undefined : { borderColor: focused ? "hsl(152 72% 48% / 0.55)" : "hsl(0 0% 100% / 0.08)", boxShadow: focused ? "0 0 0 3px hsl(152 72% 48% / 0.08), 0 8px 30px hsl(152 72% 48% / 0.10)" : "0 8px 24px hsl(0 0% 0% / 0.35)" }}
             transition={{ duration: 0.2 }}
@@ -343,7 +474,7 @@ export function AskSignalOverlay({ onClose }: Props) {
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
-              placeholder="Ask Signal anything..."
+              placeholder="Ask Signal AI anything..."
               aria-label="Message Signal AI"
               className="no-scrollbar mb-1 max-h-[140px] flex-1 resize-none bg-transparent py-1.5 text-[14.5px] leading-relaxed text-foreground caret-green outline-none placeholder:text-muted-foreground/55"
             />
@@ -366,5 +497,10 @@ export function AskSignalOverlay({ onClose }: Props) {
         </div>
       </div>
     </fm.div>
+    </>
   );
+
+  // If the portal target exists (PhoneFrame is mounted), render there so we
+  // escape the overflow-clipping content wrapper. Otherwise fall back to inline.
+  return portalTarget ? createPortal(overlay, portalTarget) : overlay;
 }

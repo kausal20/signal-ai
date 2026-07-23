@@ -48,7 +48,7 @@ export function startProject(item: FeedItem, stage: Stage = "Building"): Project
   const p: Project = {
     id: item.id, name: item.title, stage,
     category: item.category, tag: item.tag,
-    entities: (item as any).intel?.trend?.name ? [] : [],
+    entities: [] as string[],
     createdAt: Date.now(), lastActivityAt: Date.now(),
   };
   save(p);

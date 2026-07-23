@@ -226,9 +226,13 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   let messages: Turn[] = [];
+  let articleContext: Record<string, unknown> | null = null;
   try {
     const body = await req.json();
     messages = Array.isArray(body?.messages) ? body.messages : [];
+    // Ask Signal opened from a Top Story: the article travels with the request so
+    // the assistant never has to ask "which article?".
+    articleContext = body?.article_context && typeof body.article_context === "object" ? body.article_context : null;
   } catch { /* invalid input becomes the normal empty-message response */ }
 
   const turns = messages
@@ -239,7 +243,12 @@ Deno.serve(async (req) => {
 
   const question = turns.at(-1)!.content.trim();
   const priorQuestion = [...turns.slice(0, -1)].reverse().find((turn) => turn.role === "user")?.content;
-  const grounding = await retrieveGrounding(question, priorQuestion);
+  // With a story context, seed retrieval with the headline so even a short first
+  // question ("why does this matter?") pulls the right archive + entity evidence.
+  const grounding = await retrieveGrounding(
+    question,
+    priorQuestion ?? (typeof articleContext?.headline === "string" ? articleContext.headline : undefined),
+  );
   const ids = grounding.articles.map((article) => article.id);
   const key = answerCacheKey(question, grounding.intent, ids);
   const cached = answerCache.get(key);
@@ -255,9 +264,27 @@ Deno.serve(async (req) => {
 
   if (cached && cached.expiresAt > Date.now()) return new Response(sseStream(cached.text, cached.relatedSuggestions), { headers });
 
+  // When the conversation was opened from a story, pin that article to the top of
+  // the grounded system prompt. Everything else (archive retrieval, entity
+  // intelligence, related stories) is the existing pipeline — unchanged.
+  const articleBlock = articleContext ? [
+    "\nCURRENT ARTICLE (the user opened Ask Signal from this story — assume every question is about it unless they say otherwise):",
+    `Headline: ${articleContext.headline ?? ""}`,
+    articleContext.summary ? `Summary: ${articleContext.summary}` : "",
+    articleContext.publisher ? `Publisher: ${articleContext.publisher}` : "",
+    articleContext.published_at ? `Published: ${articleContext.published_at}` : "",
+    articleContext.source_type ? `Source type: ${articleContext.source_type}` : "",
+    articleContext.event_type ? `Event type: ${articleContext.event_type}` : "",
+    articleContext.primary_entity ? `Primary company: ${articleContext.primary_entity}` : "",
+    Array.isArray(articleContext.related_entities) && articleContext.related_entities.length
+      ? `Related entities: ${(articleContext.related_entities as string[]).join(", ")}` : "",
+    articleContext.article_url ? `URL: ${articleContext.article_url}` : "",
+    "Never ask the user which article they mean. Ground answers in this article plus the Signal archive below; if something is not supported, say so plainly.",
+  ].filter(Boolean).join("\n") : "";
+
   const providerStream = streamContent({
     feature: "ask-signal",
-    systemInstruction: { parts: [{ text: buildGroundedSystem(grounding) }] },
+    systemInstruction: { parts: [{ text: buildGroundedSystem(grounding) + articleBlock }] },
     contents: turns.map((turn) => ({ role: turn.role === "assistant" ? "model" : "user", parts: [{ text: turn.content }] })),
     generationConfig: { temperature: 0.35, maxOutputTokens: 1400, responseMimeType: "application/json" },
   });

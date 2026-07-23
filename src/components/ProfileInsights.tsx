@@ -29,7 +29,7 @@ export function ProfileInsights() {
             <p className="text-xl font-extrabold mt-1">{PERSONA_LABEL[persona] ?? "AI Explorer"}</p>
             <p className="text-[12px] text-muted-foreground mt-0.5">Signal Level {lvl.level} · {lvl.label}</p>
           </div>
-          <div className="w-14 h-14 score-ring flex items-center justify-center shrink-0" style={{ ["--v" as any]: lvl.pct }}>
+          <div className="w-14 h-14 score-ring flex items-center justify-center shrink-0" style={{ ["--v" as string]: lvl.pct }}>
             <div className="w-[46px] h-[46px] rounded-full bg-background flex items-center justify-center">
               <Award className="w-5 h-5 text-green" />
             </div>

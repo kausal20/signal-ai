@@ -5,11 +5,18 @@
 // closing slides it back down (see AskSignalOverlay). Self-contained; owns the
 // overlay. AnimatePresence keeps the sheet mounted long enough to play its
 // exit animation.
+//
+// This is the ONE Ask Signal surface in the app. Other screens (e.g. the Top
+// Story card) navigate here with `state: { openAsk: true, article }`, which
+// auto-opens THIS overlay pre-loaded with that article's context — so there is
+// never a second, different-looking Ask Signal page.
 // ---------------------------------------------------------------------------
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion as fm, useReducedMotion } from "framer-motion";
-import { Brain } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { AskSignalOverlay } from "./AskSignalOverlay";
+import type { ArticleContext } from "@/lib/askSignal";
 
 interface Props {
   /** Show the label next to the icon (header pill) vs icon-only. */
@@ -19,14 +26,30 @@ interface Props {
 
 export function AskSignalLauncher({ label = true, className }: Props) {
   const [open, setOpen] = useState(false);
+  const [context, setContext] = useState<ArticleContext | undefined>(undefined);
   const reduce = useReducedMotion();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Arrived from a story ("Ask Signal" on the Top Story card): open this same
+  // overlay with the article context, then clear the route state so a back or
+  // refresh doesn't re-open it.
+  useEffect(() => {
+    const state = location.state as { openAsk?: boolean; article?: ArticleContext } | null;
+    if (!state?.openAsk) return;
+    setContext(state.article);
+    setOpen(true);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state, location.pathname, navigate]);
+
+  const close = () => { setOpen(false); setContext(undefined); };
 
   return (
     <>
       <fm.button
         type="button"
-        onClick={() => setOpen(true)}
-        aria-label="Ask Signal — AI Intelligence Assistant"
+        onClick={() => { setContext(undefined); setOpen(true); }}
+        aria-label="Signal AI — your AI intelligence assistant"
         aria-haspopup="dialog"
         aria-expanded={open}
         whileHover={reduce ? undefined : { scale: 1.04 }}
@@ -40,12 +63,12 @@ export function AskSignalLauncher({ label = true, className }: Props) {
           className ?? "",
         ].join(" ")}
       >
-        <Brain className="h-4 w-4" />
-        {label && <span>Ask Signal</span>}
+        <Sparkles className="h-4 w-4" />
+        {label && <span>Signal AI</span>}
       </fm.button>
 
       <AnimatePresence>
-        {open && <AskSignalOverlay key="ask-signal-overlay" onClose={() => setOpen(false)} />}
+        {open && <AskSignalOverlay key="ask-signal-overlay" onClose={close} context={context} />}
       </AnimatePresence>
     </>
   );

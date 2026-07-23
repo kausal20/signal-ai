@@ -43,24 +43,45 @@ export function applyStrategist(
 function buildReason(profile: LearnedProfile, ctx: StrategistContext, card: FinalCard): string {
   const bits: string[] = [];
 
+  // Personal-relevance bits (strongest first).
   if (ctx.matchedConcepts.length > 0) {
     bits.push(`it connects to ${ctx.matchedConcepts.slice(0, 3).join(", ")} — topics you keep engaging with`);
   } else if (ctx.vectorRelevance >= 0.55) {
     bits.push("it is semantically close to what you read most");
   }
 
-  if (profile.inferred_role) bits.push(`it fits your profile as a ${profile.inferred_role}`);
-
   if (ctx.collaborativeRelevance >= 0.5) {
     bits.push("builders with similar taste are engaging with it");
   }
-
   if (ctx.globalMultiplier >= 1.08) bits.push("it has a strong track record of driving real outcomes");
-  else if (ctx.globalMultiplier <= 0.92) bits.push("though similar items have underperformed, so treat it as lower priority");
 
+  // Concrete-value bit — used INSTEAD of the vague "fits your profile" line when
+  // we have no genuine personal-relevance signal yet, so the reason is always
+  // about the STORY's value, not a hollow profile restatement.
   if (bits.length === 0) {
-    return `Recommended because it cleared Signal's quality bar and matches your ${profile.persona} focus.`;
+    const opp = card.opportunity ?? card.opportunities?.[0];
+    const roleFocus = profile.inferred_role ? ` for a ${profile.inferred_role}` : "";
+    if (opp?.type && opp?.title) {
+      return `${headFor(card)} because it opens a ${String(opp.type).toLowerCase()} play${roleFocus}: ${trimTo(opp.title, 90)}.`;
+    }
+    if (card.estimated_impact?.summary) {
+      return `${headFor(card)} because ${trimTo(String(card.estimated_impact.summary), 110)}.`;
+    }
+    if (card.why_it_matters) {
+      return `${headFor(card)} because ${trimTo(String(card.why_it_matters), 110)}.`;
+    }
+    return `${headFor(card)} — a high-signal ${profile.persona} story worth your time today.`;
   }
-  const head = card.priority === "High" ? "Top pick for you" : card.priority === "Medium" ? "Worth your time" : "On your radar";
-  return `${head} because ${bits.slice(0, 3).join("; ")}.`;
+
+  if (ctx.globalMultiplier <= 0.92) bits.push("though similar items have underperformed, so treat it as lower priority");
+  return `${headFor(card)} because ${bits.slice(0, 3).join("; ")}.`;
+}
+
+function headFor(card: FinalCard): string {
+  return card.priority === "High" ? "Top pick for you" : card.priority === "Medium" ? "Worth your time" : "On your radar";
+}
+
+function trimTo(s: string, n: number): string {
+  const t = s.trim().replace(/\.$/, "");
+  return t.length <= n ? t : t.slice(0, n).replace(/\s+\S*$/, "") + "…";
 }

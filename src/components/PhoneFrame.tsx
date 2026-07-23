@@ -19,6 +19,10 @@ export const PhoneFrame = ({ children }: { children: React.ReactNode }) => {
           {children}
         </div>
 
+        {/* Overlay portal target — sits outside the scrollable content wrapper
+            so fixed-positioned overlays aren't clipped by its overflow. */}
+        <div id="signal-overlay-root" className="absolute inset-0 z-[90] overflow-hidden pointer-events-none [&>*]:pointer-events-auto" />
+
         {/* Home Indicator Mockup */}
         <div className="hidden sm:block absolute bottom-1 inset-x-0 h-1 w-1/3 bg-zinc-500/50 mx-auto rounded-full z-[60] pointer-events-none"></div>
       </div>

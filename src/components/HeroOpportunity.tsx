@@ -1,7 +1,6 @@
 import { Link } from "react-router-dom";
 import { Star, ArrowRight, Bookmark, TrendingUp, Clock, ShieldCheck } from "lucide-react";
 import type { FeedItem } from "@/data/feed";
-import { SignalScoreRing } from "@/components/SignalScoreRing";
 import { whyThisMatters, ctaForOpportunity, confidenceVoice } from "@/lib/recommend";
 
 interface Props {
@@ -40,13 +39,10 @@ export function HeroOpportunity({ item, saved, onSave, onView }: Props) {
       </div>
 
       <article className="green-halo p-6 sm:p-7">
-        {/* Headline + score */}
-        <div className="flex items-start justify-between gap-4">
-          <h2 className="text-[22px] sm:text-[26px] font-extrabold leading-[1.15] tracking-tight text-foreground">
-            {title}
-          </h2>
-          <SignalScoreRing score={intel?.signalScore ?? item.score} size={54} showLabel className="shrink-0 -mt-1" />
-        </div>
+        {/* Headline */}
+        <h2 className="text-[22px] sm:text-[26px] font-extrabold leading-[1.15] tracking-tight text-foreground">
+          {title}
+        </h2>
 
         {/* Signal explains, mentor voice — one sentence */}
         <div className="mt-4">

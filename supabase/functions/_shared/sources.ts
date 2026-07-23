@@ -88,7 +88,7 @@ function parseFeed(xml: string): FeedEntry[] {
  * the first non-Google https URL out of it. Returns null when it can't be
  * decoded (caller keeps the redirect link, which still resolves to the article).
  */
-function decodeGoogleNewsUrl(link: string): string | null {
+export function decodeGoogleNewsUrl(link: string): string | null {
   try {
     const seg = link.match(/\/articles\/([A-Za-z0-9_-]+)/)?.[1];
     if (!seg) return null;

@@ -117,7 +117,11 @@ Deno.serve(async (req) => {
   // CAP 4: reason across stories once per day (UTC 02:00) to keep AI cost ~1/day.
   // Other hourly runs only refresh momentum + edges (no LLM).
   let trendsReasoned = 0;
-  const doReason = new Date().getUTCHours() === 2;
+  // Once/day (UTC 02:00) by default; `{"force_reason":true}` forces it on demand
+  // (ops/backfill) so trend_intelligence can be populated without waiting.
+  let forceReason = false;
+  try { forceReason = (await req.clone().json())?.force_reason === true; } catch { /* no body */ }
+  const doReason = forceReason || new Date().getUTCHours() === 2;
   if (doReason) {
     const breaker = new CircuitBreaker({ name: "ai_gateway", failureThreshold: 3, cooldownMs: 120_000 });
     await breaker.load(sb);

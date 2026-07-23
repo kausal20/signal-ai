@@ -8,11 +8,11 @@
 // A keyed AnimatePresence swaps stories with a staggered reveal.
 // ---------------------------------------------------------------------------
 import { AnimatePresence, motion as fm, useReducedMotion, type Variants } from "framer-motion";
-import { Bookmark, Share2, Clock, ArrowRight } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Bookmark, Share2, Clock, ArrowRight, Sparkles } from "lucide-react";
 import { BrandLogo } from "../icons/BrandLogo";
 
 import { openOriginal } from "./SourceAttribution";
-import { AiIntelligenceButton } from "./AiIntelligenceButton";
 import { eventBadge } from "../shared/eventType";
 import type { Signal } from "../shared/types";
 
@@ -56,6 +56,7 @@ const item: Variants = {
 
 export function TopStoryCard({ signal, onOpen, onToggleSave, onShare, className = "" }: Props) {
   const reduce = useReducedMotion();
+  const navigate = useNavigate();
   const badge = eventBadge(signal.title, signal.category, signal.tag);
   const affected = affectedChips(signal);
 
@@ -162,10 +163,6 @@ export function TopStoryCard({ signal, onOpen, onToggleSave, onShare, className 
             <span className="shrink-0 text-zinc-400">{categoryLabel(signal)}</span>
             <span className="shrink-0 text-zinc-600">·</span>
             <span className="inline-flex shrink-0 items-center gap-1"><Clock className="h-3.5 w-3.5" />{readMins(signal)} min</span>
-            <span className="shrink-0 text-zinc-600">·</span>
-            <span className="inline-flex shrink-0 items-center gap-1 font-mono-tight font-bold text-green">
-              <span className="text-zinc-500">Impact</span>{Math.round(signal.score)}
-            </span>
           </fm.div>
 
 
@@ -180,19 +177,40 @@ export function TopStoryCard({ signal, onOpen, onToggleSave, onShare, className 
             >
               Read Story <ArrowRight className="h-4 w-4 stroke-[2.5]" />
             </fm.button>
-            <AiIntelligenceButton
-              article={{
-                title: signal.title,
-                summary: signal.whatHappened,
-                why_it_matters: signal.takeaway,
-                tag: signal.tag,
-                source: signal.source,
-                sourceKey: signal.sourceKey ?? "",
-                url: signal.url ?? "",
-                verified: true,
+            {/* Signal has ONE Ask Signal screen — the overlay in Advisor. This
+                navigates there with the article context (openAsk + article), so
+                the user enters that SAME experience from a different entry point.
+                No second page, no duplicate chat UI. */}
+            <fm.button
+              type="button"
+              aria-label="Ask Signal AI about this story"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate("/", {
+                  state: {
+                    openAsk: true,
+                    article: {
+                      article_id: signal.id,
+                      headline: signal.title,
+                      summary: signal.whatHappened ?? signal.takeaway,
+                      publisher: signal.source,
+                      publisher_domain: signal.domain,
+                      published_at: signal.publishedAt,
+                      source_type: signal.isOfficial ? "OFFICIAL_SOURCE" : undefined,
+                      impact_score: signal.score,
+                      event_type: signal.eventType ?? categoryLabel(signal),
+                      article_url: signal.url,
+                    },
+                  },
+                });
               }}
-              className="h-12 flex-1"
-            />
+              whileHover={reduce ? undefined : { scale: 1.02 }}
+              whileTap={reduce ? undefined : { scale: 0.97 }}
+              transition={{ type: "spring", stiffness: 360, damping: 22 }}
+              className="inline-flex h-12 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-green/40 bg-[linear-gradient(120deg,hsl(152_72%_48%/0.18),hsl(152_72%_48%/0.06))] px-4 text-[14px] font-bold text-green shadow-[0_0_20px_hsl(152_72%_48%/0.18)] backdrop-blur-md transition-colors hover:bg-[linear-gradient(120deg,hsl(152_72%_48%/0.26),hsl(152_72%_48%/0.10))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0d0a]"
+            >
+              <Sparkles className="h-4 w-4" /> Signal AI
+            </fm.button>
           </fm.div>
         </fm.div>
       </AnimatePresence>

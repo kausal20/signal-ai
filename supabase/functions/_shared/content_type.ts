@@ -61,6 +61,9 @@ export function classifyContentType(input: {
 
   // ── Non-news editorial shapes (must beat "news" verbs) ──────────────────────
   if (/\bvs\.?\b|\bversus\b|\bcompar(e|ed|es|ison)\b|\bhead[- ]to[- ]head\b/.test(t)) return "comparison";
+  // Multi-company roundups ("Where X Fits Among A, B, C…") — media analysis, not company news.
+  if (/\b(fits?|sits?)\s+among\b|\bwhere\b.+\b(fits|among)\b/.test(t)) return "comparison";
+  if (/\bamong\b[^.!?]{0,140}(,|\band\b|\b&\b)[^.!?]{0,80}(,|\band\b|\b&\b)/.test(t)) return "comparison";
   if (/\btop\s+\d+\b|\bbest\s+\d+\b|\b\d+\s+(best|top|ai tools|tools|alternatives|frameworks|apps)\b|\bround[- ]?up\b|\blisticle\b/.test(t)) return "listicle";
   if (/\bhow to\b|\btutorial\b|\bguide\b|\bstep[- ]by[- ]step\b|\bgetting started\b|\bwalkthrough\b|\bbuild (a|an|your)\b|\bcheat sheet\b/.test(t)) return "tutorial";
   if (/\bbenchmark|\beval(uation)?\b|\bmmlu\b|\bswe[- ]?bench\b|\bhumaneval\b|\bleaderboard\b|\bllm arena\b/.test(blob)) return "benchmark";

@@ -12,6 +12,25 @@ const ASK_URL = `${SUPABASE_URL}/functions/v1/ask-signal`;
 const CONNECT_TIMEOUT_MS = 30_000;
 const RETRY_DELAYS = [0, 500, 1000, 2000]; // first try immediate, then backoff
 
+/** Full Top-Story context handed to Ask Signal so the user never re-explains it. */
+export interface ArticleContext {
+  article_id?: string;
+  headline: string;
+  summary?: string;
+  publisher?: string;
+  publisher_domain?: string;
+  published_at?: string;
+  source_type?: string;
+  impact_score?: number;
+  event_type?: string;
+  primary_entity?: string;
+  related_entities?: string[];
+  related_story_ids?: string[];
+  official_source?: string;
+  article_url?: string;
+  image_url?: string;
+}
+
 export interface ChatTurn {
   role: "user" | "assistant";
   content: string;
@@ -33,7 +52,7 @@ export function isNetworkError(e: unknown): boolean {
 }
 
 /** Establish the SSE connection with timeout + backoff retry. Throws if all attempts fail. */
-async function connect(messages: ChatTurn[], signal?: AbortSignal): Promise<Response> {
+async function connect(messages: ChatTurn[], signal?: AbortSignal, articleContext?: ArticleContext): Promise<Response> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
     if (signal?.aborted) throw new DOMException("aborted", "AbortError");
@@ -49,7 +68,7 @@ async function connect(messages: ChatTurn[], signal?: AbortSignal): Promise<Resp
         method: "POST",
         signal: timer.signal,
         headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-        body: JSON.stringify({ messages }),
+        body: JSON.stringify({ messages, article_context: articleContext ?? null }),
       });
       if (res.ok && res.body) {
         console.info("[AskSignal] ← connected", { status: res.status, attempt: attempt + 1 });
@@ -83,8 +102,9 @@ export async function healthCheck(): Promise<boolean> {
 export async function* streamAskSignal(
   messages: ChatTurn[],
   signal?: AbortSignal,
+  articleContext?: ArticleContext,
 ): AsyncGenerator<StreamEvent> {
-  const res = await connect(messages, signal);
+  const res = await connect(messages, signal, articleContext);
 
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();

@@ -7,7 +7,6 @@ import { ChevronLeft, Bookmark, Share2, ExternalLink, Star } from "lucide-react"
 import { motion as fm, useReducedMotion } from "framer-motion";
 import { ScreenShell } from "../layouts/ScreenShell";
 import { SectionHeader } from "../components/SectionHeader";
-import { SignalScoreRing } from "../components/SignalScoreRing";
 import { SignalBadge } from "../components/SignalBadge";
 import { SignalButton } from "../components/SignalButton";
 import { FeedCard } from "../components/FeedCard";
@@ -43,7 +42,7 @@ export function SignalDetailPage({
   primaryActionLabel = "Read full story",
   onBack, onToggleSave, onShare, onOpenExternal, onOpenRelated,
 }: Props) {
-  const { id, title, source, sourceKey, score, tag, timeAgo, saved } = signal;
+  const { id, title, source, sourceKey, tag, timeAgo, saved } = signal;
   const reduce = useReducedMotion();
   const V = reduce ? undefined : item;
   const anim = reduce
@@ -108,10 +107,7 @@ export function SignalDetailPage({
             {tag && <SignalBadge tone="neutral">{tag}</SignalBadge>}
             {timeAgo && <span className="text-[10px] font-semibold text-muted-foreground">{timeAgo}</span>}
           </div>
-          <div className="flex items-start justify-between gap-4">
-            <h1 className="flex-1 text-[26px] font-extrabold leading-[1.15] tracking-[-0.025em] text-foreground">{title}</h1>
-            <SignalScoreRing score={score} size={58} showLabel className="shrink-0" />
-          </div>
+          <h1 className="text-[26px] font-extrabold leading-[1.15] tracking-[-0.025em] text-foreground">{title}</h1>
         </fm.div>
 
         {/* WHY THIS MATTERS */}

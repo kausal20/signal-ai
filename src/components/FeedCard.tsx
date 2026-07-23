@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from "react";
 import { Bookmark, ChevronDown, Clock, ArrowRight, ExternalLink, Zap, Target, Globe, Lightbulb, Rocket, Star, Link2, Share2, TrendingUp, DollarSign, ThumbsUp, ThumbsDown, Sparkles, Hammer } from "lucide-react";
 import type { FeedItem } from "@/data/feed";
 import { track, trackOutcome, readingStart, readingStop } from "@/lib/signals";
-import { SignalScoreRing } from "@/components/SignalScoreRing";
 import { startProject } from "@/lib/projects";
 
 /* ═══════════════════════════════════════════════
@@ -162,8 +161,8 @@ export function FeedCard({ item, bookmarked, onToggleBookmark, index = 0 }: Prop
     e.stopPropagation();
     track("shared", { feed_item_id: item.id });
     const data = { title: item.title, text: item.summary, url: item.url };
-    if (typeof navigator !== "undefined" && (navigator as any).share) {
-      (navigator as any).share(data).catch(() => {});
+    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+      navigator.share(data).catch(() => {});
     } else if (typeof navigator !== "undefined" && navigator.clipboard) {
       navigator.clipboard.writeText(item.url).catch(() => {});
     }
@@ -238,11 +237,6 @@ export function FeedCard({ item, bookmarked, onToggleBookmark, index = 0 }: Prop
             <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
               <Clock className="w-3 h-3" />
               {readTime(`${item.summary} ${item.whyItMatters}`)}
-            </span>
-            {/* Signal score (compact, always visible per spec) */}
-            <span className="flex items-center gap-1 text-[11px] font-semibold text-green/90 font-mono-tight">
-              <Star className="w-2.5 h-2.5" />
-              {item.intel?.signalScore ?? item.score}
             </span>
           </div>
 
@@ -424,20 +418,6 @@ export function FeedCard({ item, bookmarked, onToggleBookmark, index = 0 }: Prop
                   </li>
                 ))}
               </ul>
-            </ExpandedSection>
-
-            {/* ⭐ SIGNAL SCORE — signature metric, circular ring */}
-            <ExpandedSection icon={<Star className="w-4 h-4" />} title="Signal Score">
-              <div className="flex items-center gap-4">
-                <SignalScoreRing score={item.intel?.signalScore ?? item.score} size={56} showLabel />
-                <div className="flex-1">
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Summarizes business impact, personal relevance, confidence, trend strength, and opportunity quality.
-                    {item.impact === "critical" && " · Official release"}
-                    {item.engagement > 500 && ` · ${item.engagement.toLocaleString()} engagements`}
-                  </p>
-                </div>
-              </div>
             </ExpandedSection>
 
             {/* 🔗 SOURCE */}

@@ -33,11 +33,15 @@ const AFFILIATE =
   /\bbest deals?\b|\bcoupon\b|\bpromo code\b|\bdiscount code\b|\b\d{1,3}% off\b|\bblack friday\b|\bcyber monday\b|\bdeal of the day\b|\bsave (money|\$)\b/i;
 const SEO_CLICKBAIT =
   /\bhow much (does|is|do)\b|\bis .{2,30} worth it\b|\b\d+ (best|top|cheapest|free) \b|\b(best|top) \d+\b|\balternatives? to\b|\bcheapest\b|\byou won'?t believe\b|\bshocking\b|\bthis is why\b|\bhere'?s (why|how|what)\b/i;
+// Third-party roundups naming many companies — never a single company's official timeline.
+const MULTI_COMPANY_ROUNDUP =
+  /\b(fits?|sits?)\s+among\b|\bwhere\b.+\b(fits|among)\b|\bamong\b[^.!?]{0,140}(,|\band\b|\b&\b)[^.!?]{0,80}(,|\band\b|\b&\b)/i;
 
 function isJunk(title: string, summary: string, contentType: ContentType): boolean {
   const t = title.toLowerCase();
   const blob = `${t} ${summary.toLowerCase()}`;
   if (NON_OFFICIAL_TYPES.has(contentType)) return true;
+  if (MULTI_COMPANY_ROUNDUP.test(title)) return true;
   if (CRYPTO_PREDICTION.test(blob)) return true;
   if (STOCK_SEO.test(title)) return true;
   if (AFFILIATE.test(blob)) return true;
@@ -93,4 +97,12 @@ export function classifyEditorial(input: {
     && !NON_OFFICIAL_TYPES.has(input.contentType)
     && eventType !== "none";
   return { eventType, qualityScore, isOfficialCompanyNews };
+}
+
+/** Official Company News in the archive requires a genuine event on the company's OWN publisher. */
+export function isOfficialCompanyNewsForArchive(
+  editorial: EditorialResult,
+  isOfficialSource: boolean,
+): boolean {
+  return isOfficialSource && editorial.isOfficialCompanyNews;
 }

@@ -1,12 +1,14 @@
 // signal-ui-v2 · components/RecommendationCard.tsx
 // ---------------------------------------------------------------------------
-// Hero recommendation with floating animation, breathing glow, enhanced
-// confidence ring, and premium CTA. Feels alive and intentional.
+// "My Pick For You Today" — a personal AI intelligence briefing.
+// Answers, in one glance: what happened · why it matters · why it matters to
+// YOU · can I trust it · what to do next. Keeps the existing Signal design
+// language (green-halo glass, floating/breathing motion, conviction ring,
+// premium CTAs); this is an information-architecture upgrade, not a restyle.
 // ---------------------------------------------------------------------------
-import { Rocket, Bookmark } from "lucide-react";
+import { Sparkles, Bookmark, Check, ShieldCheck, ArrowRight, MessageSquare } from "lucide-react";
 import { motion as fm, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { SignalScoreRing } from "./SignalScoreRing";
 import { SignalButton } from "./SignalButton";
 import { SignalBadge } from "./SignalBadge";
 import { haptic } from "../animations/motion";
@@ -17,6 +19,8 @@ interface Props {
   /** Eyebrow above the title, e.g. "MY PICK FOR YOU TODAY". */
   eyebrow?: string;
   onStart?: (id: string) => void;
+  /** Opens the single Signal AI screen with this story's context. */
+  onAsk?: (id: string) => void;
   onToggleSave?: (id: string) => void;
   /** Loading state for the CTA (e.g. while opening the resource). */
   starting?: boolean;
@@ -24,19 +28,21 @@ interface Props {
 }
 
 /**
- * The Advisor / hero recommendation: an opinionated pick with a conviction ring
- * and a contextual CTA. The production app maps `type → ctaLabel/destination`
- * and passes them in; this component only presents them.
+ * The Advisor hero: an opinionated daily pick presented as an intelligence
+ * briefing. All content (headline, summary, reasons, badge, trust signals) is
+ * passed in already-derived from real backend intelligence; this component only
+ * presents it.
  */
 export function RecommendationCard({
   recommendation,
   eyebrow = "My pick for you today",
   onStart,
+  onAsk,
   onToggleSave,
   starting,
   className,
 }: Props) {
-  const { id, title, reason, conviction, ctaLabel, saved } = recommendation;
+  const { id, title, summary, reasons, badge, trust, official, ctaLabel, saved } = recommendation;
   const reduce = useReducedMotion();
 
   return (
@@ -54,7 +60,6 @@ export function RecommendationCard({
         animate={reduce ? undefined : { opacity: [0.5, 0.9, 0.5], scale: [0.95, 1.08, 0.95] }}
         transition={reduce ? undefined : { duration: 4.5, repeat: Infinity, ease: "easeInOut" }}
       />
-
       {/* Secondary glow — bottom left */}
       {!reduce && (
         <fm.div
@@ -65,37 +70,82 @@ export function RecommendationCard({
         />
       )}
 
-      <div className="relative mb-4">
-        <SignalBadge tone="green" icon={<Rocket className="h-3 w-3" />}>{eyebrow}</SignalBadge>
+      {/* SECTION 1 — Header: eyebrow + dynamic story badge */}
+      <div className="relative mb-4 flex items-center justify-between gap-2">
+        <SignalBadge tone="green" icon={<Sparkles className="h-3 w-3" />}>{eyebrow}</SignalBadge>
+        {badge && (
+          <SignalBadge tone={badge.tone} icon={official ? <ShieldCheck className="h-3 w-3" /> : undefined}>
+            {badge.label}
+          </SignalBadge>
+        )}
       </div>
 
-      <div className="relative flex items-start justify-between gap-4">
-        <h2 className="flex-1 text-[27px] font-extrabold leading-[1.14] tracking-[-0.025em] text-foreground">
-          {title}
-        </h2>
-        <SignalScoreRing score={conviction} size={62} caption="CONVICTION" className="shrink-0" />
-      </div>
+      {/* SECTION 2 — Headline */}
+      <h2 className="relative text-[24px] font-extrabold leading-[1.16] tracking-[-0.025em] text-foreground">
+        {title}
+      </h2>
 
-      {reason && (
-        <p className="relative mt-4 text-[15px] leading-relaxed text-foreground/80">{reason}</p>
+      {/* SECTION 3 — Executive summary (what happened) */}
+      {summary && (
+        <p className="relative mt-3.5 text-[14.5px] leading-relaxed text-foreground/75 line-clamp-3">
+          {summary}
+        </p>
       )}
 
-      <div className="relative mt-[18px] flex items-center gap-2">
+      {/* SECTION 4 — Why this matters to YOU */}
+      {reasons && reasons.length > 0 && (
+        <div className="relative mt-5">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+            Why this matters to you
+          </p>
+          <ul className="mt-2.5 flex flex-col gap-2">
+            {reasons.map((r, i) => (
+              <li key={i} className="flex items-start gap-2.5 text-[13.5px] leading-snug text-foreground/85">
+                <Check className="mt-[1px] h-4 w-4 shrink-0 text-green" strokeWidth={2.5} />
+                <span>{r}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* SECTION 5 — Trust signals */}
+      {trust && trust.length > 0 && (
+        <div className="relative mt-5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+          {trust.map((t, i) => (
+            <span
+              key={i}
+              className="inline-flex items-center rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground"
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* SECTION 6 — Actions */}
+      <div className="relative mt-[18px] flex flex-col gap-2">
         <SignalButton fullWidth size="lg" onClick={() => onStart?.(id)} disabled={starting}>
-          {starting ? "Opening…" : ctaLabel}
+          {starting ? "Opening…" : (
+            <span className="inline-flex items-center gap-2">{ctaLabel} <ArrowRight className="h-4 w-4 stroke-[2.5]" /></span>
+          )}
         </SignalButton>
-        <SignalButton
-          variant="secondary"
-          size="lg"
-          aria-label={saved ? "Remove bookmark" : "Save"}
-          onClick={() => {
-            haptic(10);
-            onToggleSave?.(id);
-          }}
-          className="w-[52px] px-0"
-        >
-          <Bookmark className={cn("h-[18px] w-[18px]", saved && "fill-green text-green animate-bookmark-enhanced")} />
-        </SignalButton>
+        <div className="flex items-center gap-2">
+          {onAsk && (
+            <SignalButton variant="secondary" size="lg" fullWidth onClick={() => { haptic(10); onAsk(id); }}>
+              <span className="inline-flex items-center gap-2"><MessageSquare className="h-[17px] w-[17px]" /> Ask Signal AI</span>
+            </SignalButton>
+          )}
+          <SignalButton
+            variant="secondary"
+            size="lg"
+            aria-label={saved ? "Remove bookmark" : "Save"}
+            onClick={() => { haptic(10); onToggleSave?.(id); }}
+            className="w-[52px] px-0"
+          >
+            <Bookmark className={cn("h-[18px] w-[18px]", saved && "fill-green text-green animate-bookmark-enhanced")} />
+          </SignalButton>
+        </div>
       </div>
     </fm.div>
   );

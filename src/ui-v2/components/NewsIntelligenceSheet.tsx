@@ -7,12 +7,12 @@
 // impact, key takeaways, timeline, related companies) with a sticky Ask Signal
 // action. Sections stagger in. Presentation only.
 // ---------------------------------------------------------------------------
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion as fm, useReducedMotion, type Variants } from "framer-motion";
 import { Brain, X, RefreshCw, AlertTriangle, ArrowRight } from "lucide-react";
 import { motionTokens } from "../animations/motion";
 import { BrandLogo } from "../icons/BrandLogo";
-import { ReadOriginalButton, VerifiedBadge, isSafeUrl } from "./SourceAttribution";
+import { ReadOriginalButton, VerifiedBadge, isSafeUrl, openOriginal } from "./SourceAttribution";
 import type { Intelligence } from "@/hooks/useNewsIntelligence";
 import type { SourceKey } from "../shared/types";
 
@@ -25,6 +25,8 @@ interface Props {
   status: Status;
   data: Intelligence | null;
   error: string | null;
+  /** Generation phases still in flight — drives per-section skeletons. */
+  pending?: Set<"core" | "deep">;
   articleTitle: string;
   source?: { name?: string; sourceKey?: SourceKey; url?: string; verified?: boolean };
 }
@@ -92,6 +94,69 @@ function ChipRow({ items, tone, reduce, onTap }: {
   );
 }
 
+// ── Per-section shimmer (never one big spinner) ────────────────────────────
+function LineSkeleton({ lines = 3 }: { lines?: number }) {
+  const widths = ["92%", "78%", "64%", "85%", "70%"];
+  return (
+    <div className="flex flex-col gap-2" aria-hidden>
+      {Array.from({ length: lines }).map((_, i) => (
+        <div key={i} className="motion-wave-shimmer h-3 rounded" style={{ width: widths[i % widths.length] }} />
+      ))}
+    </div>
+  );
+}
+function CardSkeleton({ count = 2 }: { count?: number }) {
+  return (
+    <div className="flex flex-col gap-2.5" aria-hidden>
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3.5">
+          <div className="motion-wave-shimmer mb-2 h-3 w-24 rounded" />
+          <div className="motion-wave-shimmer h-3 w-[85%] rounded" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── "Signal AI is analyzing…" with rotating, animated steps ────────────────
+const ANALYZING_STEPS = [
+  "Comparing related articles",
+  "Checking official sources",
+  "Finding historical context",
+  "Evaluating market impact",
+];
+function AnalyzingStrip({ reduce, slow }: { reduce: boolean; slow: boolean }) {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setStep((s) => (s + 1) % ANALYZING_STEPS.length), 1600);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="rounded-2xl border border-green/15 bg-green/[0.05] px-4 py-3">
+      <div className="flex items-center gap-2">
+        <span className="h-2 w-2 animate-[pulse-dot_1.2s_ease-in-out_infinite] rounded-full bg-green" />
+        <span className="text-[12.5px] font-semibold text-foreground/90">
+          {slow ? "Still analyzing this story…" : "Signal AI is analyzing this story…"}
+        </span>
+      </div>
+      <div className="mt-1.5 h-4 overflow-hidden pl-4">
+        <AnimatePresence mode="wait" initial={false}>
+          <fm.p
+            key={step}
+            initial={reduce ? undefined : { opacity: 0, y: 8 }}
+            animate={reduce ? undefined : { opacity: 1, y: 0 }}
+            exit={reduce ? undefined : { opacity: 0, y: -8 }}
+            transition={{ duration: 0.2, ease: EASE }}
+            className="text-[11.5px] text-muted-foreground"
+          >
+            • {ANALYZING_STEPS[step]}
+          </fm.p>
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
 function Skeleton() {
   return (
     <fm.div variants={stagger} initial="hidden" animate="show" className="flex flex-col gap-4" role="status" aria-label="Generating analysis">
@@ -110,7 +175,7 @@ function Skeleton() {
   );
 }
 
-export function NewsIntelligenceSheet({ open, onClose, onRetry, status, data, error, articleTitle, source }: Props) {
+export function NewsIntelligenceSheet({ open, onClose, onRetry, status, data, error, pending, articleTitle, source }: Props) {
   const reduce = useReducedMotion();
   const sheetRef = useRef<HTMLDivElement>(null);
   const prevFocus = useRef<HTMLElement | null>(null);
@@ -142,6 +207,19 @@ export function NewsIntelligenceSheet({ open, onClose, onRetry, status, data, er
       ].filter(Boolean) as { label: string; text: string }[]
     : [];
   const relatedCompanies = data?.related_companies?.length ? data.related_companies : (data?.related_topics ?? []);
+
+  // Per-phase loading → per-section skeletons (never one blocking spinner).
+  const corePending = pending ? pending.has("core") : status === "loading";
+  const deepPending = pending ? pending.has("deep") : status === "loading";
+  const anyPending = corePending || deepPending;
+
+  // After 10s switch the copy to "Still analyzing…" — never freeze the UI.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!open || !anyPending) { setSlow(false); return; }
+    const id = setTimeout(() => setSlow(true), 10_000);
+    return () => clearTimeout(id);
+  }, [open, anyPending]);
   const timeline = data?.timeline;
 
   return (
@@ -267,18 +345,23 @@ export function NewsIntelligenceSheet({ open, onClose, onRetry, status, data, er
                   </div>
                   {error && <p className="mt-4 max-w-[300px] text-[11px] text-muted-foreground/50">{error}</p>}
                 </div>
-              ) : status !== "ready" || !data ? (
-                <Skeleton />
               ) : (
                 <fm.div variants={reduce ? undefined : stagger} initial={reduce ? undefined : "hidden"} animate={reduce ? undefined : "show"} className="flex flex-col gap-5 pb-4">
+                  {/* Live progress — replaces the old blocking spinner */}
+                  {anyPending && <AnalyzingStrip reduce={!!reduce} slow={slow} />}
+
                   {/* 1 · Executive Summary */}
                   <Section emoji="📄" title="Executive Summary">
-                    <p className="text-[13.5px] leading-relaxed text-foreground/85">{data.executive_summary || data.summary}</p>
+                    {(data?.executive_summary || data?.summary)
+                      ? <p className="text-[13.5px] leading-relaxed text-foreground/85">{data.executive_summary || data.summary}</p>
+                      : <LineSkeleton lines={4} />}
                   </Section>
 
                   {/* 2 · Why This Matters (business / technology / market) */}
                   <Section emoji="💡" title="Why This Matters">
-                    {whyBullets.length > 0 ? (
+                    {corePending && whyBullets.length === 0 ? (
+                      <CardSkeleton count={3} />
+                    ) : whyBullets.length > 0 ? (
                       <div className="flex flex-col gap-2.5">
                         {whyBullets.map((b) => (
                           <fm.div
@@ -292,36 +375,76 @@ export function NewsIntelligenceSheet({ open, onClose, onRetry, status, data, er
                         ))}
                       </div>
                     ) : (
-                      <p className="text-[13.5px] leading-relaxed text-foreground/85">{data.why_it_matters}</p>
+                      <p className="text-[13.5px] leading-relaxed text-foreground/85">{data?.why_it_matters}</p>
                     )}
                   </Section>
 
-                  {/* 3 · Who Wins */}
-                  {(data.who_wins?.length ?? 0) > 0 && (
+                  {/* 3 · Should You Care? (per-audience star relevance) */}
+                  {((data?.relevance?.length ?? 0) > 0 || corePending) && (
+                    <Section emoji="⭐" title="Should You Care?">
+                      {(data?.relevance?.length ?? 0) === 0 ? <CardSkeleton count={3} /> : (
+                      <div className="flex flex-col gap-1.5">
+                        {data!.relevance!.map((r) => (
+                          <fm.div key={r.audience} variants={reduce ? undefined : rise} className="flex items-center justify-between rounded-xl border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                            <span className="text-[12.5px] font-medium text-foreground/85">{r.audience}</span>
+                            <span className="flex gap-0.5" aria-label={`${r.stars} of 5 stars`}>
+                              {[1, 2, 3, 4, 5].map((n) => (
+                                <span key={n} className={`text-[13px] leading-none ${n <= r.stars ? "text-green" : "text-white/15"}`}>★</span>
+                              ))}
+                            </span>
+                          </fm.div>
+                        ))}
+                      </div>
+                      )}
+                    </Section>
+                  )}
+
+                  {/* 4 · Who Wins */}
+                  {((data?.who_wins?.length ?? 0) > 0 || deepPending) && (
                     <Section emoji="🏆" title="Who Wins">
-                      <ChipRow items={data.who_wins!} tone="win" reduce={!!reduce} />
+                      {(data?.who_wins?.length ?? 0) === 0 ? <LineSkeleton lines={1} />
+                        : <ChipRow items={data!.who_wins!} tone="win" reduce={!!reduce} />}
                     </Section>
                   )}
 
                   {/* 4 · Who Loses */}
-                  {(data.who_loses?.length ?? 0) > 0 && (
+                  {((data?.who_loses?.length ?? 0) > 0 || deepPending) && (
                     <Section emoji="⚠️" title="Who Loses">
-                      <ChipRow items={data.who_loses!} tone="lose" reduce={!!reduce} />
+                      {(data?.who_loses?.length ?? 0) === 0 ? <LineSkeleton lines={1} />
+                        : <ChipRow items={data!.who_loses!} tone="lose" reduce={!!reduce} />}
                     </Section>
                   )}
 
                   {/* 5 · Market Impact */}
-                  {data.market_impact && (
+                  {(data?.market_impact || deepPending) && (
                     <Section emoji="📊" title="Market Impact">
-                      <p className="text-[13.5px] leading-relaxed text-foreground/85">{data.market_impact}</p>
+                      {data?.market_impact
+                        ? <p className="text-[13.5px] leading-relaxed text-foreground/85">{data.market_impact}</p>
+                        : <LineSkeleton lines={3} />}
+                    </Section>
+                  )}
+
+                  {/* 6 · Technology Breakdown */}
+                  {((data?.technology_breakdown?.length ?? 0) > 0 || deepPending) && (
+                    <Section emoji="⚙️" title="Technology Breakdown">
+                      {(data?.technology_breakdown?.length ?? 0) === 0 ? <LineSkeleton lines={3} /> : (
+                      <ul className="flex flex-col gap-2">
+                        {data!.technology_breakdown!.map((t, i) => (
+                          <fm.li key={i} variants={reduce ? undefined : rise} className="flex items-start gap-2.5 text-[13px] leading-snug text-foreground/85">
+                            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-green/70" />{t}
+                          </fm.li>
+                        ))}
+                      </ul>
+                      )}
                     </Section>
                   )}
 
                   {/* 6 · Key Takeaways */}
-                  {data.key_takeaways.length > 0 && (
+                  {((data?.key_takeaways?.length ?? 0) > 0 || deepPending) && (
                     <Section emoji="📌" title="Key Takeaways">
+                      {(data?.key_takeaways?.length ?? 0) === 0 ? <CardSkeleton count={3} /> : (
                       <fm.div variants={reduce ? undefined : stagger} initial={reduce ? undefined : "hidden"} animate={reduce ? undefined : "show"} className="flex flex-col gap-2.5">
-                        {data.key_takeaways.slice(0, 5).map((k, i) => (
+                        {data!.key_takeaways.slice(0, 5).map((k, i) => (
                           <fm.div
                             key={i}
                             variants={reduce ? undefined : rise}
@@ -336,12 +459,14 @@ export function NewsIntelligenceSheet({ open, onClose, onRetry, status, data, er
                           </fm.div>
                         ))}
                       </fm.div>
+                      )}
                     </Section>
                   )}
 
                   {/* 7 · Timeline (past / present / next) */}
-                  {timeline && (timeline.past || timeline.present || timeline.next) && (
+                  {((timeline && (timeline.past || timeline.present || timeline.next)) || deepPending) && (
                     <Section emoji="🗓" title="Timeline">
+                      {!timeline || !(timeline.past || timeline.present || timeline.next) ? <LineSkeleton lines={3} /> : (
                       <div className="flex flex-col gap-2.5">
                         {[
                           { k: "Past", v: timeline.past, dot: "bg-white/25" },
@@ -359,26 +484,56 @@ export function NewsIntelligenceSheet({ open, onClose, onRetry, status, data, er
                           </fm.div>
                         ))}
                       </div>
+                      )}
                     </Section>
                   )}
 
-                  {/* 8 · Related Companies (tap → search) */}
-                  {relatedCompanies.length > 0 && (
+                  {/* 9 · Related Companies (tap → search) */}
+                  {(relatedCompanies.length > 0 || deepPending) && (
                     <Section emoji="🏢" title="Related Companies">
-                      <ChipRow
-                        items={relatedCompanies}
-                        tone="neutral"
-                        reduce={!!reduce}
-                        onTap={(c) => { dispatchSearch(c); onClose(); }}
-                      />
+                      {relatedCompanies.length === 0 ? <LineSkeleton lines={1} /> : (
+                        <ChipRow
+                          items={relatedCompanies}
+                          tone="neutral"
+                          reduce={!!reduce}
+                          onTap={(c) => { dispatchSearch(c); onClose(); }}
+                        />
+                      )}
+                    </Section>
+                  )}
+
+                  {/* 10 · Related Stories (arrive first — no AI needed) */}
+                  {((data?.related_stories?.length ?? 0) > 0 || anyPending) && (
+                    <Section emoji="📰" title="Related Stories">
+                      {(data?.related_stories?.length ?? 0) === 0 ? <CardSkeleton count={3} /> : (
+                      <div className="flex flex-col gap-2">
+                        {data!.related_stories!.slice(0, 5).map((s, i) => (
+                          <fm.button
+                            key={i}
+                            type="button"
+                            variants={reduce ? undefined : rise}
+                            onClick={() => { if (isSafeUrl(s.url)) openOriginal(s.url); }}
+                            whileHover={reduce ? undefined : { y: -2, borderColor: "hsl(152 72% 48% / 0.3)" }}
+                            transition={{ type: "spring", stiffness: 320, damping: 24 }}
+                            className="flex items-start gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3 text-left"
+                          >
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] text-[11px]">📄</span>
+                            <div className="min-w-0 flex-1">
+                              <p className="line-clamp-2 text-[13px] font-medium leading-snug text-foreground/90">{s.title}</p>
+                              {s.publisher && <p className="mt-1 text-[11px] text-muted-foreground">{s.publisher}</p>}
+                            </div>
+                          </fm.button>
+                        ))}
+                      </div>
+                      )}
                     </Section>
                   )}
                 </fm.div>
               )}
             </div>
 
-            {/* Sticky · Ask Signal */}
-            {status === "ready" && (
+            {/* Sticky · Ask Signal — available as soon as the sheet has content */}
+            {status !== "error" && (
               <div className="shrink-0 border-t border-white/[0.06] bg-[#080b08]/95 px-5 py-3 backdrop-blur-2xl">
                 <fm.button
                   type="button"

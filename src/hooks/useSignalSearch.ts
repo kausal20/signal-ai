@@ -16,7 +16,8 @@ interface SearchRow {
   // Publisher (real site) + section/content-type/editorial from the search RPC.
   publisher?: string; publisher_domain?: string; original_url?: string;
   content_type?: string; section?: string;
-  is_official_company_news?: boolean; event_type?: string; editorial_quality_score?: number;
+  is_official_company_news?: boolean; is_official_source?: boolean;
+  event_type?: string; editorial_quality_score?: number;
 }
 
 function rowToSignal(r: SearchRow): Signal {
@@ -46,13 +47,19 @@ function rowToSignal(r: SearchRow): Signal {
     section: r.section || undefined,
     contentType: r.content_type || undefined,
     eventType: r.event_type || undefined,
-    isOfficial: r.is_official_company_news === true,
+    isOfficial: r.is_official_source === true,
   };
 }
+
+export interface RelatedProduct { name: string; type: string; slug: string; }
 
 export interface SignalSearchState {
   results: Signal[];
   related: string[];
+  /** Related Products — entity-derived, ranked (products > companies > tech). */
+  relatedProducts: RelatedProduct[];
+  /** What the backend actually returned: products / companies / technologies / none. */
+  relatedFallback: "products" | "companies" | "technologies" | "none";
   suggestions: string[];
   loading: boolean;
   ready: boolean;   // a backend response was received for the current query
@@ -131,7 +138,7 @@ export function useSignalSearch(query: string, enabled: boolean): SignalSearchSt
   useEffect(() => {
     const q = query.trim();
     if (!enabled || q.length < 2) {
-      setState({ results: [], related: [], suggestions: [], loading: false, ready: false, error: null, fallback: null });
+      setState({ results: [], related: [], relatedProducts: [], relatedFallback: "none", suggestions: [], loading: false, ready: false, error: null, fallback: null });
       return;
     }
     const mySeq = ++seq.current;
@@ -144,13 +151,15 @@ export function useSignalSearch(query: string, enabled: boolean): SignalSearchSt
         if (error || !data) {
           const message = error ? errorMessage(error) : "The search service returned no response.";
           console.error("[Signal search] Backend search failed", { query: q, message, error });
-          setState({ results: [], related: [], suggestions: [], loading: false, ready: false, error: message, fallback: null });
+          setState({ results: [], related: [], relatedProducts: [], relatedFallback: "none", suggestions: [], loading: false, ready: false, error: message, fallback: null });
           return;
         }
         const rows: SearchRow[] = Array.isArray(data.results) ? data.results : [];
         setState({
           results: rows.map(rowToSignal),
           related: Array.isArray(data.related) ? data.related : [],
+          relatedProducts: Array.isArray(data.related_products) ? data.related_products : [],
+          relatedFallback: (["products", "companies", "technologies", "none"] as const).includes(data.related_fallback) ? data.related_fallback : "none",
           suggestions: Array.isArray(data.suggestions) ? data.suggestions : [],
           loading: false,
           ready: true,
@@ -161,7 +170,7 @@ export function useSignalSearch(query: string, enabled: boolean): SignalSearchSt
         if (mySeq === seq.current) {
           const message = errorMessage(error);
           console.error("[Signal search] Backend search request threw", { query: q, message, error });
-          setState({ results: [], related: [], suggestions: [], loading: false, ready: false, error: message, fallback: null });
+          setState({ results: [], related: [], relatedProducts: [], relatedFallback: "none", suggestions: [], loading: false, ready: false, error: message, fallback: null });
         }
       }
     }, 250);

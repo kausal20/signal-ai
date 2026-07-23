@@ -308,6 +308,8 @@ const Index = () => {
         error={backendSearch.error}
         fallback={backendSearch.fallback}
         relatedTopics={backendSearch.related}
+        relatedProducts={backendSearch.relatedProducts}
+        relatedFallback={backendSearch.relatedFallback}
         suggestions={backendSearch.suggestions}
         bookmarkCount={bookmarks.length}
         onNavigate={navSection}

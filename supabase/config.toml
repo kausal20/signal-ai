@@ -6,6 +6,9 @@ verify_jwt = true
 [functions.backfill-entities]
 verify_jwt = true
 
+[functions.discover-sources]
+verify_jwt = true
+
 [functions.register-push]
 verify_jwt = false
 
@@ -19,6 +22,9 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.search]
+verify_jwt = false
+
+[functions.entity-overview]
 verify_jwt = false
 
 [functions.send-notifications]

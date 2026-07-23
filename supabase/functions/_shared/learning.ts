@@ -120,9 +120,18 @@ export async function learnAndPersist(
   if (declaredPersona) profile.persona = declaredPersona;
 
   if (newSignals.length > 0) {
-    // Decay existing interests + concepts once per cycle (recency bias).
-    for (const a of INTEREST_AXES) profile.interest_weights[a] *= DECAY;
-    for (const c of Object.keys(profile.concept_affinity)) profile.concept_affinity[c] *= DECAY;
+    // TIME-PROPORTIONAL decay (recency bias). CRITICAL: decay by ELAPSED DAYS
+    // since the last update — NOT once per call. `personalize` runs on every
+    // feed load, so a per-call ×0.97 crushed learned weights to zero within a
+    // day of active use (two calls seconds apart used to decay twice). Now two
+    // calls seconds apart decay ~0; a week apart decays 0.97^7. Capped at 30d.
+    const anchor = profile.last_signal_at ? Date.parse(profile.last_signal_at) : 0;
+    const daysElapsed = anchor > 0 ? Math.min(30, Math.max(0, (Date.now() - anchor) / 86400_000)) : 0;
+    const decayFactor = daysElapsed > 0 ? Math.pow(DECAY, daysElapsed) : 1;
+    if (decayFactor < 1) {
+      for (const a of INTEREST_AXES) profile.interest_weights[a] *= decayFactor;
+      for (const c of Object.keys(profile.concept_affinity)) profile.concept_affinity[c] *= decayFactor;
+    }
 
     let latest = profile.last_signal_at;
     for (const s of newSignals) {
@@ -172,6 +181,28 @@ export async function learnAndPersist(
     }
   }
 
+  // RESEED: if learned weights are effectively empty (new user, OR a profile the
+  // old per-call decay bug already crushed to zero) but the user declared
+  // onboarding interests, seed the axes from those interests so personalization
+  // is never flat. Real, non-fabricated: interests come straight from onboarding.
+  const wSum = INTEREST_AXES.reduce((s, a) => s + Math.abs(profile.interest_weights[a] ?? 0), 0);
+  if (wSum < 0.05) {
+    if ((profile.interests?.length ?? 0) > 0) {
+      // Prefer onboarding interests (explicit user choice).
+      for (const raw of profile.interests!) {
+        for (const a of interestAxes(String(raw))) {
+          profile.interest_weights[a] = clampW((profile.interest_weights[a] ?? 0) + 0.6);
+        }
+      }
+    } else {
+      // No declared interests (and history was empty or crushed to zero): seed
+      // from the learned/declared persona so ranking is never flat.
+      for (const a of personaAxes(profile.persona)) {
+        profile.interest_weights[a] = clampW((profile.interest_weights[a] ?? 0) + 0.5);
+      }
+    }
+  }
+
   // CAP 3: recompute adaptive persona mix + inferred role from evolved memory.
   profile.persona_mix = inferPersonaMix(profile);
   profile.inferred_role = inferRole(profile);
@@ -190,12 +221,17 @@ export async function learnAndPersist(
   // first signal (no onboarding/auth needed). Idempotent INSERT ... ON CONFLICT
   // DO NOTHING — never modifies an existing clients row (safe for future auth /
   // account-linking) and race-safe under concurrent requests.
-  await dbWrite("clients.ensure", () => sb.from("clients").upsert(
-    { client_id: profile.client_id },
-    { onConflict: "client_id", ignoreDuplicates: true },
-  ));
-
-  await dbWrite("user_profiles.upsert", () => sb.from("user_profiles").upsert({
+  // PERFORMANCE: persist in the background. The evolved `profile` is already in
+  // memory and returned to the caller for this response, so the two writes don't
+  // need to block it. clients MUST land before user_profiles (FK), so they are
+  // chained. `EdgeRuntime.waitUntil` keeps the promise alive after the HTTP
+  // response returns; locally (no EdgeRuntime) we await so learning still saves.
+  const persist = (async () => {
+    await dbWrite("clients.ensure", () => sb.from("clients").upsert(
+      { client_id: profile.client_id },
+      { onConflict: "client_id", ignoreDuplicates: true },
+    ));
+    await dbWrite("user_profiles.upsert", () => sb.from("user_profiles").upsert({
     client_id: profile.client_id,
     persona: profile.persona,
     persona_mix: profile.persona_mix,
@@ -220,6 +256,11 @@ export async function learnAndPersist(
     opportunity_weights: derived.opportunity_weights,
     updated_at: new Date().toISOString(),
   }, { onConflict: "client_id" }));
+  })();
+
+  const waitUntil = (globalThis as any)?.EdgeRuntime?.waitUntil;
+  if (typeof waitUntil === "function") waitUntil.call((globalThis as any).EdgeRuntime, persist.catch(() => {}));
+  else await persist;
 
   return profile;
 }
@@ -277,6 +318,40 @@ function inferRole(p: LearnedProfile): string {
   const role = base[top[0]?.[0] ?? "builder"] ?? "AI builder";
   const second = top[1] ? ` / ${base[top[1][0]] ?? ""}`.replace(/ \/ $/, "") : "";
   return `${role}${second} ${focus[focusAxis] ? "— " + focus[focusAxis] : ""}`.trim();
+}
+
+// Persona → representative interest axes (seed for users with no other signal).
+function personaAxes(persona: string): InterestAxis[] {
+  switch (persona) {
+    case "developer": return ["coding", "agents"];
+    case "builder": return ["coding", "automation", "agents"];
+    case "founder": return ["business", "models"];
+    case "agency": return ["automation", "business"];
+    case "researcher": return ["research", "models"];
+    case "marketer": return ["video", "design", "business"];
+    case "investor": return ["business", "models"];
+    case "student": return ["research", "models"];
+    default: return ["models", "agents"];
+  }
+}
+
+// Onboarding interest label → interest axes. Broad, since users pick from a
+// fixed topic set; falls back to the search mapper for free-form values.
+function interestAxes(interest: string): InterestAxis[] {
+  const s = interest.toLowerCase().replace(/[_-]+/g, " ").trim();
+  const out = new Set<InterestAxis>();
+  const add = (a: InterestAxis) => out.add(a);
+  if (/(cod|dev|program|engineer|software|api|sdk|ide)/.test(s)) add("coding");
+  if (/(agent|autonom|mcp|crew|autogen|langchain)/.test(s)) add("agents");
+  if (/(automat|workflow|ops|n8n|zapier|no.?code)/.test(s)) add("automation");
+  if (/(business|startup|founder|revenue|fund|market|growth|gtm|sales)/.test(s)) add("business");
+  if (/(research|paper|benchmark|science|academ)/.test(s)) add("research");
+  if (/(voice|speech|audio|tts|stt)/.test(s)) add("voice");
+  if (/(video|image|media|creative|design|art|diffusion)/.test(s)) { add("video"); add("design"); }
+  if (/(model|llm|gpt|claude|gemini|llama|frontier|reasoning)/.test(s)) add("models");
+  if (/(infra|gpu|inference|deploy|scal|hosting|cloud)/.test(s)) add("infra");
+  if (out.size === 0) for (const a of searchAxes(s)) out.add(a);
+  return [...out];
 }
 
 function searchAxes(q: string): InterestAxis[] {
@@ -460,14 +535,23 @@ export function buildAdvisor(cards: FinalCard[]): Advisor {
   const ranked = [...cards].sort((a, b) => b.signal_score - a.signal_score);
   const top3 = ranked.slice(0, 3).map((c) => ({ id: c.id, headline: c.headline, takeaway: c.personalized_takeaway }));
 
-  let best: Advisor["best_opportunity_today"] = null;
-  let bestRank = -1;
-  for (const c of ranked) {
-    for (const o of c.opportunities) {
-      const r = impactRank(o);
-      if (r > bestRank) { bestRank = r; best = { id: c.id, headline: c.headline, opportunity: o }; }
+  // The hero must open a REAL article. Prefer cards with a valid publisher URL;
+  // only fall back to a redirect/broken-URL card if nothing else has an opportunity.
+  const isBrokenUrl = (u?: string) =>
+    !u || !/^https?:\/\//.test(u) || /news\.google\.com|googleusercontent\.com|gstatic\.com|\/\/google\.com/.test(u);
+  const pickBest = (allowBroken: boolean): Advisor["best_opportunity_today"] => {
+    let b: Advisor["best_opportunity_today"] = null;
+    let bestRank = -1;
+    for (const c of ranked) {
+      if (!allowBroken && isBrokenUrl((c as any).url)) continue;
+      for (const o of c.opportunities) {
+        const r = impactRank(o);
+        if (r > bestRank) { bestRank = r; b = { id: c.id, headline: c.headline, opportunity: o }; }
+      }
     }
-  }
+    return b;
+  };
+  const best = pickBest(false) ?? pickBest(true);
   const tool = ranked.find((c) => /tool of the day|underrated tool/i.test(c.content_category));
   const learn = ranked.find((c) => c.estimated_impact?.learning_value === "High");
   const trend = ranked.find((c) => c.trend?.direction === "accelerating" || c.trend?.direction === "emerging");

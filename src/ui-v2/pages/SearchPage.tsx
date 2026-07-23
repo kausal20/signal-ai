@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion as fm, useReducedMotion } from "framer-motion";
 import { motionTokens } from "../animations/motion";
+import { useEntityOverview } from "@/hooks/useEntityOverview";
 import { ScreenShell } from "../layouts/ScreenShell";
 import { BottomNav } from "../layouts/BottomNav";
 import { SectionHeader } from "../components/SectionHeader";
@@ -63,8 +64,12 @@ interface Props {
 
   /** Set to "trending" when backend returned fallback content. */
   fallback?: string | null;
-  /** Related search terms returned by the backend. */
+  /** Related search terms returned by the backend (legacy string[]). */
   relatedTopics?: string[];
+  /** Related PRODUCTS — entity-derived (products/models/companies/frameworks). */
+  relatedProducts?: { name: string; type: string; slug: string }[];
+  /** Backend classification: products | companies | technologies | none. */
+  relatedFallback?: "products" | "companies" | "technologies" | "none";
   /** "Did you mean" suggestions from the backend. */
   suggestions?: string[];
 
@@ -87,7 +92,7 @@ const cardItem = {
 
 // ── Rotating placeholders (4s cadence) ─────────────────────────────────────
 const PLACEHOLDERS = [
-  "Search anything…", "Ask Signal…", "Research a topic…",
+  "Search anything…", "Ask Signal AI…", "Research a topic…",
   "Find videos…", "Discover tools…", "Explore AI…",
 ];
 
@@ -316,7 +321,7 @@ export function SearchPage({
   query, onQueryChange, placeholder, matchCount, sourcesTracked = "1,240",
   trending, collections, sources, intents = DEFAULT_INTENTS, bookmarkCount = 0,
   results = [], loading = false, error = null, fallback = null,
-  relatedTopics = [], suggestions = [],
+  suggestions = [],
   onNavigate, onSubmitTerm, onSelectIntent, onOpenCollection,
   onOpenSource, onOpenSignal, onToggleSave,
 }: Props) {
@@ -381,9 +386,8 @@ export function SearchPage({
     return CATEGORIES.find((c) => c.label.toLowerCase() === q)?.label ?? null;
   }, [query]);
 
-  // Entity search returns an editorial `section` per result → Bloomberg-style
-  // layout. "Official Company News" holds only genuine company events; the rest
-  // fall into labelled lower sections. Keyword search has no section → by-tag.
+  // Entity search returns an editorial `section` per result. "Official Company News"
+  // is populated only for the company's own publisher (section=official from RPC).
   const entityMode = useMemo(() => results.some((r) => r.section), [results]);
   const groups = useMemo<(Group & { sub?: string })[]>(() => {
     if (entityMode) {
@@ -591,24 +595,12 @@ export function SearchPage({
                     </div>
                   )}
 
-                  {/* ── Related Topics ── */}
-                  {relatedTopics.length > 0 && (
-                    <div className="flex flex-col gap-2">
-                      <span className="text-[12.5px] font-semibold text-muted-foreground">Related Topics</span>
-                      <div className="flex flex-wrap gap-2">
-                        {relatedTopics.slice(0, 8).map((t) => (
-                          <button
-                            key={t}
-                            type="button"
-                            onClick={() => onSubmitTerm?.(t)}
-                            className="rounded-full border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[12px] font-semibold text-foreground/80 transition-colors hover:border-green/25 hover:text-green active:scale-95"
-                          >
-                            {t}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  {/* ── ✨ Signal AI Overview ──
+                      Lightweight (no card / no border / no background). Renders
+                      only when the query is a recognized AI entity AND the
+                      grounded overview is available. Hidden entirely otherwise.
+                      Answers "what is it / who / why it matters" in ≤3 lines. */}
+                  <SignalAiOverview query={query} />
 
                   {groups.map((g, gi) => {
                     // Official Company News shows the FULL timeline by default
@@ -867,5 +859,34 @@ export function SearchPage({
         </AnimatePresence>
       </div>
     </ScreenShell>
+  );
+}
+// ═══════════════════════════════════════════════════════════════════════════
+// ✨ Signal AI Overview — three-line grounded briefing.
+// No card. No border. No background. No expand/show-more. Fades in after the
+// backend resolves the query to a recognized AI entity and returns the cached
+// overview. Renders NOTHING when the query is not a recognized entity, so the
+// section vanishes entirely (no placeholder, no empty state).
+// ═══════════════════════════════════════════════════════════════════════════
+function SignalAiOverview({ query }: { query: string }) {
+  const reduce = useReducedMotion();
+  const { overview, loading } = useEntityOverview(query);
+  if (loading || !overview) return null;
+  return (
+    <fm.div
+      key={overview}
+      initial={reduce ? undefined : { opacity: 0, y: 4 }}
+      animate={reduce ? undefined : { opacity: 1, y: 0 }}
+      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+      className="flex flex-col gap-1.5"
+    >
+      <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-green">
+        <Sparkles className="h-3 w-3" strokeWidth={2.5} /> Signal AI Overview
+      </span>
+      <p className="text-[13.5px] leading-relaxed text-foreground/85 line-clamp-3">
+        {overview}
+      </p>
+      <div className="mt-1 h-px bg-white/[0.08]" />
+    </fm.div>
   );
 }

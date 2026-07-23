@@ -21,10 +21,10 @@ import { staggerContainer as container, motionTokens } from "../animations/motio
 import { ScreenShell } from "../layouts/ScreenShell";
 import { BottomNav } from "../layouts/BottomNav";
 import { LivePulse } from "../components/LivePulse";
+import { AskSignalLauncher } from "../ask/AskSignalLauncher";
 import { SectionHeader } from "../components/SectionHeader";
 import { FeedCard } from "../components/FeedCard";
 import { TopStoryCard } from "../components/TopStoryCard";
-import { SignalScoreChip } from "../components/SignalScoreRing";
 import { CountUp } from "../components/CountUp";
 import { BrandLogo } from "../icons/BrandLogo";
 import type { Recommendation, Signal, SectionKey, UserProfile, Project } from "../shared/types";
@@ -87,7 +87,7 @@ export function HomePage({
 
   // Scroll-driven collapse: greeting shrinks + subtitle fades as the feed rises.
   const [scrollEl, setScrollEl] = useState<HTMLElement | null>(null);
-  const { scrollY } = useScroll({ container: scrollEl ? { current: scrollEl } as any : undefined });
+  const { scrollY } = useScroll({ container: scrollEl ? { current: scrollEl } as React.RefObject<HTMLElement> : undefined });
   const greetingScale = useTransform(scrollY, [0, 90], [1, 0.78]);
   const greetingY = useTransform(scrollY, [0, 90], [0, -8]);
   const subOpacity = useTransform(scrollY, [0, 60], [1, 0]);
@@ -147,18 +147,23 @@ export function HomePage({
       )}
       <div className="bg-[linear-gradient(to_bottom,hsl(0_0%_3%/0.96)_60%,transparent)] px-4 pb-3.5 pt-[52px] backdrop-blur sm:px-5 lg:px-6">
         <div className="mx-auto w-full max-w-[920px]">
-          <div className="mb-3.5 flex items-center justify-between">
+          <div className="mb-3.5 flex items-center justify-between gap-3">
             <LivePulse bare label="Updated just now" />
-            <fm.button
-              type="button"
-              onClick={onOpenProfile}
-              aria-label="Open profile"
-              whileTap={reduce ? undefined : { scale: 0.9 }}
-              whileHover={reduce ? undefined : { scale: 1.06 }}
-              className="flex h-[34px] w-[34px] items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.05] text-[13px] font-bold text-green"
-            >
-              {profile.initials ?? profile.name.slice(0, 1).toUpperCase()}
-            </fm.button>
+            {/* Signal AI is a primary, always-visible action here. This is the
+                ONE Signal AI surface in the app — the launcher owns the overlay. */}
+            <div className="flex shrink-0 items-center gap-2">
+              <AskSignalLauncher />
+              <fm.button
+                type="button"
+                onClick={onOpenProfile}
+                aria-label="Open profile"
+                whileTap={reduce ? undefined : { scale: 0.9 }}
+                whileHover={reduce ? undefined : { scale: 1.06 }}
+                className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.05] text-[13px] font-bold text-green"
+              >
+                {profile.initials ?? profile.name.slice(0, 1).toUpperCase()}
+              </fm.button>
+            </div>
           </div>
           <fm.h1
             style={reduce ? undefined : { scale: greetingScale, y: greetingY, transformOrigin: "left top" }}
@@ -273,12 +278,11 @@ export function HomePage({
                   className="flex h-[170px] w-[280px] shrink-0 snap-start flex-col justify-between rounded-2xl border border-white/[0.07] bg-white/[0.035] p-4 text-left"
                 >
                   <div>
-                    <div className="mb-2 flex items-center justify-between">
+                    <div className="mb-2">
                       <span className="flex items-center gap-1.5 font-mono-tight text-[9.5px] font-bold tracking-[0.12em] text-green">
                         {s.sourceKey && <BrandLogo source={s.sourceKey} name={s.source} size={12} />}
                         {s.source}
                       </span>
-                      <SignalScoreChip score={s.score} />
                     </div>
                     <div className="text-[14px] font-bold leading-snug text-foreground line-clamp-2">{s.title}</div>
                     {s.takeaway && (

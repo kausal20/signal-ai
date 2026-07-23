@@ -5,7 +5,8 @@ import type { RawItem, StoryCluster, SignalItem, EditorialAudit } from "./types.
 import { sourceUrlsFor } from "./cluster.ts";
 import { dbWrite } from "./reliability.ts";
 import { classifyContentType } from "./content_type.ts";
-import { classifyEditorial } from "./editorial.ts";
+import { classifyEditorial, isOfficialCompanyNewsForArchive } from "./editorial.ts";
+import { classifySourceType } from "./source_type.ts";
 
 const MAX_CONSECUTIVE_FAILURES = 3;
 // Exponential disable window per failure streak, capped (Phase 11 self-healing).
@@ -46,6 +47,12 @@ export async function archiveAcceptedItems(sb: any, accepted: RawItem[]): Promis
   const rows = accepted.map((i) => {
     const contentType = classifyContentType({ title: i.rawTitle, url: i.originalUrl ?? i.url, source: i.source, summary: i.rawText });
     const editorial = classifyEditorial({ title: i.rawTitle, summary: i.rawText, contentType });
+    // Source tier from the connector kind + publisher domain (entity-match
+    // refinement happens later in the entity processor). Official vs media.
+    const srcClass = classifySourceType({
+      publisher: i.publisher, publisherDomain: i.publisherDomain, url: i.originalUrl ?? i.url,
+      connectorSource: i.source, connectorKind: i.sourceKind,
+    });
     return {
       id: i.id,
       url: i.url,
@@ -63,7 +70,10 @@ export async function archiveAcceptedItems(sb: any, accepted: RawItem[]): Promis
       content_type: contentType,
       event_type: editorial.eventType,
       editorial_quality_score: editorial.qualityScore,
-      is_official_company_news: editorial.isOfficialCompanyNews,
+      is_official_company_news: isOfficialCompanyNewsForArchive(editorial, srcClass.isOfficial),
+      source_type: srcClass.sourceType,
+      trust_score: srcClass.trustScore,
+      is_official_source: srcClass.isOfficial,
       published_at: i.published_at,
       language: "en",
       entity_status: "pending",

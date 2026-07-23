@@ -4,7 +4,6 @@
 // plan timeline, scroll-triggered sections, and premium entrance choreography.
 // ---------------------------------------------------------------------------
 
-import { useState } from "react";
 import { Ban, ChevronRight } from "lucide-react";
 import { motion as fm, useReducedMotion } from "framer-motion";
 import { ScreenShell } from "../layouts/ScreenShell";
@@ -12,14 +11,9 @@ import { BottomNav } from "../layouts/BottomNav";
 import { LivePulse } from "../components/LivePulse";
 import { SectionHeader } from "../components/SectionHeader";
 import { RecommendationCard } from "../components/RecommendationCard";
-import { HeroCarousel, type HeroCard } from "../components/HeroCarousel";
-import { CompareAiCard } from "../advisor/CompareAiCard";
-import { CompareOverlay } from "../advisor/CompareOverlay";
-
-import { AskSignalLauncher } from "../ask/AskSignalLauncher";
 import { Timeline } from "../components/Timeline";
 import { SignalProgress } from "../components/SignalProgress";
-import { staggerContainer as container, fadeInUp as item, motionTokens, viewportOnce } from "../animations/motion";
+import { staggerContainer as container, fadeInUp as item, motionTokens } from "../animations/motion";
 import type { Recommendation, PlanStep, Project, SectionKey } from "../shared/types";
 
 interface Props {
@@ -27,8 +21,6 @@ interface Props {
   greeting: string;
   greetingSub?: string;
   recommendation: Recommendation;
-  /** Bullet reasons for the "why" section. */
-  reasons: string[];
   plan: PlanStep[];
   /** What to deliberately ignore today (trust-builder). */
   skip?: { title: string; body: string };
@@ -39,6 +31,7 @@ interface Props {
 
   onNavigate?: (s: SectionKey) => void;
   onStart?: (id: string) => void;
+  onAsk?: (id: string) => void;
   onToggleSave?: (id: string) => void;
   onToggleStep?: (id: string) => void;
   onOpenTomorrow?: () => void;
@@ -46,37 +39,15 @@ interface Props {
 
 export function AdvisorPage({
   greeting, greetingSub = "Here's the one thing I'd spend it on.",
-  recommendation, reasons, plan, skip, project, tomorrow,
-  starting, bookmarkCount = 0, onNavigate, onStart, onToggleSave, onToggleStep, onOpenTomorrow,
+  recommendation, plan, skip, project, tomorrow,
+  starting, bookmarkCount = 0, onNavigate, onStart, onAsk, onToggleSave, onToggleStep, onOpenTomorrow,
 }: Props) {
   const reduce = useReducedMotion();
-  const [compareOpen, setCompareOpen] = useState(false);
 
   const V = reduce ? undefined : item;
   const anim = reduce
     ? { initial: undefined, animate: undefined }
     : { initial: "hidden" as const, animate: "show" as const };
-
-  // Build the hero carousel cards: Recommendation + Compare AI
-  const carouselCards: HeroCard[] = [
-    ...(recommendation
-      ? [{
-          id: "recommendation",
-          content: (
-            <RecommendationCard
-              recommendation={recommendation}
-              onStart={onStart}
-              onToggleSave={onToggleSave}
-              starting={starting}
-            />
-          ),
-        }]
-      : []),
-    {
-      id: "compare-ai",
-      content: <CompareAiCard active={compareOpen} onOpen={() => setCompareOpen(true)} />,
-    },
-  ];
 
   const header = (
     <fm.div
@@ -92,8 +63,6 @@ export function AdvisorPage({
         <span className="text-sm font-extrabold text-foreground">Advisor</span>
         <LivePulse bare className="mt-1 text-[10px]" label="Briefed for today" />
       </div>
-      {/* Ask Signal lives ONLY here — Advisor top-right. */}
-      <AskSignalLauncher className="ml-auto" />
     </fm.div>
   );
 
@@ -106,31 +75,21 @@ export function AdvisorPage({
           <p className="mt-2.5 text-[15px] leading-snug text-muted-foreground">{greetingSub}</p>
         </fm.div>
 
-        {/* TODAY'S OPPORTUNITY + COMPARE AI — hero carousel */}
-        {carouselCards.length > 0 && (
+        {/* TODAY'S OPPORTUNITY — the "My Pick" briefing card */}
+        {recommendation && (
           <fm.div variants={V} className="mb-[28px]">
-            <HeroCarousel cards={carouselCards} ariaLabel="Today's picks" />
+            <RecommendationCard
+              recommendation={recommendation}
+              onStart={onStart}
+              onAsk={onAsk}
+              onToggleSave={onToggleSave}
+              starting={starting}
+            />
           </fm.div>
         )}
 
-        {/* Compare overlay (full-screen, morphs from card) */}
-        <CompareOverlay open={compareOpen} onClose={() => setCompareOpen(false)} />
-
-        {/* WHY — scroll-triggered */}
-        <fm.section
-          variants={V}
-          className="mb-[30px]"
-        >
-          <SectionHeader title="Why I'm telling you this" />
-          <fm.ul variants={reduce ? undefined : container} {...anim} className="flex flex-col gap-2.5">
-            {reasons.map((r, i) => (
-              <fm.li key={i} variants={V} className="flex items-start gap-2.5">
-                <span className="mt-[7px] h-[5px] w-[5px] shrink-0 rounded-full bg-green" />
-                <span className="text-[15px] leading-relaxed text-foreground/80">{r}</span>
-              </fm.li>
-            ))}
-          </fm.ul>
-        </fm.section>
+        {/* WHY now lives inside the "My Pick" card (Section 4 — "Why this matters
+            to you"), so the standalone section is intentionally removed. */}
 
         {/* PLAN — stagger reveal */}
         <fm.section variants={V} className="mb-[30px]">

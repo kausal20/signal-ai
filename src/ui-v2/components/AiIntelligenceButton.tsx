@@ -20,7 +20,7 @@ interface Props {
 export function AiIntelligenceButton({ article, className }: Props) {
   const reduce = useReducedMotion();
   const [open, setOpen] = useState(false);
-  const { status, data, error, generate } = useNewsIntelligence();
+  const { status, data, error, pending, generate } = useNewsIntelligence();
 
   const openSheet = useCallback(() => {
     setOpen(true);
@@ -70,8 +70,9 @@ export function AiIntelligenceButton({ article, className }: Props) {
         status={status}
         data={data}
         error={error}
+        pending={pending}
         articleTitle={article.title}
-        source={{ name: article.source, sourceKey: article.sourceKey as any, url: article.url, verified: article.verified }}
+        source={{ name: article.source, sourceKey: article.sourceKey, url: article.url, verified: article.verified }}
       />
     </>
   );

@@ -5,7 +5,7 @@
 // back to a labelled Preview stream so the UI never dead-ends. Client-only
 // state (no persistence). Additive.
 import { useCallback, useRef, useState } from "react";
-import { streamAskSignal, fallbackRelatedSuggestions, healthCheck, type ChatTurn, type StreamEvent } from "@/lib/askSignal";
+import { streamAskSignal, fallbackRelatedSuggestions, healthCheck, type ChatTurn, type StreamEvent, type ArticleContext } from "@/lib/askSignal";
 
 // Turn a backend error event into a clear, honest, non-scary message.
 function friendlyError(ev: StreamEvent): string {
@@ -32,7 +32,9 @@ type Status = "idle" | "thinking" | "streaming";
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-export function useAskSignal() {
+/** `context` (a Top Story) is sent with every turn so the assistant always knows
+ *  which article the conversation is about — the user never re-explains it. */
+export function useAskSignal(context?: ArticleContext) {
   const [messages, setMessages] = useState<AskMessage[]>([]);
   const [status, setStatus] = useState<Status>("idle");
   const abortRef = useRef<AbortController | null>(null);
@@ -59,7 +61,7 @@ export function useAskSignal() {
 
     try {
       let got = false;
-      for await (const ev of streamAskSignal(history, ctrl.signal)) {
+      for await (const ev of streamAskSignal(history, ctrl.signal, context)) {
         if (ev.error) {
           patch(botId, (m) => ({ ...m, content: friendlyError(ev) }));
           got = true;
@@ -87,7 +89,7 @@ export function useAskSignal() {
       const msg = !online
         ? "⚠️ **You're offline.** Check your internet connection and tap retry."
         : reachable
-          ? "⚠️ **Couldn't reach Ask Signal.** The service is briefly unavailable — please try again."
+          ? "⚠️ **Couldn't reach Signal AI.** The service is briefly unavailable — please try again."
           : "⚠️ **Unable to reach Signal servers.** Please check your connection and try again.";
       patch(botId, (m) => ({ ...m, content: msg }));
     } finally {
@@ -99,7 +101,7 @@ export function useAskSignal() {
       setStatus("idle");
       abortRef.current = null;
     }
-  }, [messages, status]);
+  }, [messages, status, context]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();

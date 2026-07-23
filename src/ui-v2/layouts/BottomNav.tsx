@@ -16,7 +16,7 @@ const TABS: Tab[] = [
   { key: "settings", label: "Profile", icon: <SlidersHorizontal strokeWidth={2} /> },
 ];
 
-export function BottomNav({ active, onNavigate }: Props) {
+export function BottomNav({ active, bookmarkCount, onNavigate }: Props) {
   return (
     <LiquidGlassBar
       tabs={TABS}

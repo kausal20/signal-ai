@@ -41,7 +41,6 @@ export function CountUp({ value, duration = 900, className, format }: Props) {
     };
     raf.current = requestAnimationFrame(tick);
     return () => { if (raf.current) cancelAnimationFrame(raf.current); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, duration, reduce, isInView]);
 
   return (

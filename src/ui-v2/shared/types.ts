@@ -58,19 +58,26 @@ export interface Signal {
   section?: string;
   contentType?: string;             // news | funding | launch | tutorial | repo | …
   eventType?: string;               // launch | funding | acquisition | … | none
-  isOfficial?: boolean;             // genuine company event (Official Company News)
+  isOfficial?: boolean;             // official company source or genuine company event
 }
 
-/** The single Advisor recommendation of the day. */
+/** The single Advisor recommendation of the day — the "My Pick" intelligence briefing. */
 export interface Recommendation {
   id: string;
   type: string;            // "skill" | "tool" | "paper" | … — drives the CTA label
-  title: string;
-  reason?: string;        // conversational "why I'm telling you this"
+  title: string;           // the story headline (what happened)
+  reason?: string;        // conversational "why I'm telling you this" (legacy single line)
   conviction: number;      // 0–100
   ctaLabel: string;        // e.g. "Start Learning" (production maps type → label)
   destinationLabel?: string;
   saved?: boolean;
+  // ── "My Pick For You Today" briefing fields (all optional, all derived from
+  //    real backend intelligence; the card degrades gracefully if absent). ──
+  summary?: string;        // executive summary — concise "what happened"
+  reasons?: string[];      // "why this matters to you" — 2–4 personalized reasons
+  badge?: { label: string; tone: "green" | "amber" | "news" | "neutral" }; // dynamic
+  trust?: string[];        // trust-signal chips (High Impact, Official Source, time…)
+  official?: boolean;      // verified first-party source
 }
 
 /** A step in the Advisor "today's plan" timeline. */

@@ -11,11 +11,16 @@ import type { FeedItem, PersonalIntel } from "@/data/feed";
 
 interface PersonalizeCard {
   id: string;
+  headline?: string;
+  what_happened?: string;
+  why_it_matters?: string;
+  url?: string;
+  content_category?: string;
   personalized_takeaway?: string;
-  opportunity?: any;
+  opportunity?: PersonalIntel["opportunity"];
   action?: string;
-  estimated_impact?: any;
-  roi?: any;
+  estimated_impact?: PersonalIntel["roi"];
+  roi?: PersonalIntel["roi"];
   priority?: PersonalIntel["priority"];
   effort?: PersonalIntel["effort"];
   risk?: PersonalIntel["risk"];
@@ -23,7 +28,38 @@ interface PersonalizeCard {
   signal_score?: number;
   recommendation_reason?: string;
   why_signal_picked_this?: string[];
-  trend?: any;
+  trend?: PersonalIntel["trend"];
+}
+
+// Materialise a personalize card (which may be an archive-sourced supplement not
+// present in feed_items) into a FeedItem so the Advisor list can render it.
+function cardToFeedItem(c: PersonalizeCard, intel?: PersonalIntel): FeedItem {
+  const score = Math.round(c.signal_score ?? 60);
+  return {
+    id: c.id,
+    title: c.headline ?? "Signal",
+    summary: c.what_happened ?? "",
+    whyItMatters: c.why_it_matters ?? c.what_happened ?? "",
+    what_happened: c.what_happened ?? "",
+    who_for: "",
+    opportunity: "",
+    url: c.url ?? "#",
+    tag: "news",
+    source: "Signal archive",
+    category: (c.content_category as any) ?? "news",
+    content_category: c.content_category ?? "Must Know",
+    score,
+    usefulness: score, vibe_friendly: true, humanized: false, engagement: 0,
+    published_at: new Date().toISOString(),
+    timestamp: new Date().toISOString(),
+    impact: score >= 80 ? "critical" : "major",
+    novelty_score: score, business_impact_score: score, builder_value_score: score,
+    adoption_potential_score: score, market_impact_score: score, confidence_score: 70,
+    opportunity_score: score, corroboration_score: score, source_count: 1,
+    leverage_score: 6, trend_score: 0, momentum_score: 0,
+    action_label: "watch", trend_entities: [], ranking_reason: c.recommendation_reason ?? "",
+    intel,
+  } as unknown as FeedItem;
 }
 
 function cardToIntel(c: PersonalizeCard, persona: string): PersonalIntel {
@@ -48,8 +84,8 @@ export function usePersonalizedFeed() {
   const base = useLiveFeed();
   const [items, setItems] = useState<FeedItem[]>(base.items);
   const [personalized, setPersonalized] = useState(false);
-  const [advisor, setAdvisor] = useState<any>(null);
-  const [profile, setProfile] = useState<any>(null);
+  const [advisor, setAdvisor] = useState<Record<string, unknown> | null>(null);
+  const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const lastKey = useRef<string>("");
 
@@ -66,19 +102,25 @@ export function usePersonalizedFeed() {
 
       const intelById = new Map<string, PersonalIntel>();
       const order: string[] = [];
+      const cardsById = new Map<string, PersonalizeCard>();
       for (const c of data.cards as PersonalizeCard[]) {
         intelById.set(c.id, cardToIntel(c, data.profile?.persona ?? persona));
+        cardsById.set(c.id, c);
         order.push(c.id);
       }
-      // Merge intel + reorder: personalized cards first (their score order), rest after.
-      const merged = feed.map((it) => (intelById.has(it.id) ? { ...it, intel: intelById.get(it.id) } : it));
-      const rank = new Map(order.map((id, i) => [id, i]));
-      merged.sort((a, b) => {
-        const ra = rank.has(a.id) ? rank.get(a.id)! : Infinity;
-        const rb = rank.has(b.id) ? rank.get(b.id)! : Infinity;
-        if (ra !== rb) return ra - rb;
-        return (b.score ?? 0) - (a.score ?? 0);
+      const feedById = new Map(feed.map((it) => [it.id, it]));
+      // Build the list in the backend's ranked order. Cards that exist in the
+      // base feed get their intel merged; cards that DON'T (archive-sourced
+      // supplements — the never-empty / freshness guard in `personalize`) are
+      // materialised as feed items so the Advisor hero + list actually surface them.
+      const ordered: FeedItem[] = order.map((id) => {
+        const base = feedById.get(id);
+        if (base) return { ...base, intel: intelById.get(id) };
+        return cardToFeedItem(cardsById.get(id)!, intelById.get(id));
       });
+      // Keep any base feed items the backend didn't rank, appended after.
+      const seen = new Set(order);
+      const merged = [...ordered, ...feed.filter((it) => !seen.has(it.id))];
       setItems(merged);
       setPersonalized(true);
       setAdvisor(data.advisor ?? null);
