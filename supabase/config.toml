@@ -27,6 +27,12 @@ verify_jwt = false
 [functions.entity-overview]
 verify_jwt = false
 
+[functions.article-summary]
+verify_jwt = false
+
+[functions.prompt-generate]
+verify_jwt = false
+
 [functions.send-notifications]
 verify_jwt = true
 

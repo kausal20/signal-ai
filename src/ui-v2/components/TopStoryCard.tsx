@@ -14,6 +14,7 @@ import { BrandLogo } from "../icons/BrandLogo";
 
 import { openOriginal } from "./SourceAttribution";
 import { eventBadge } from "../shared/eventType";
+import { useArticleSummary } from "@/hooks/useArticleSummary";
 import type { Signal } from "../shared/types";
 
 interface Props {
@@ -59,6 +60,11 @@ export function TopStoryCard({ signal, onOpen, onToggleSave, onShare, className 
   const navigate = useNavigate();
   const badge = eventBadge(signal.title, signal.category, signal.tag);
   const affected = affectedChips(signal);
+  // Signal Summary — AI-generated, cached per article. Falls back to the article
+  // excerpt if the summary hasn't been generated yet, so the card is never blank.
+  const excerpt = signal.whatHappened || signal.takeaway;
+  const { summary } = useArticleSummary(signal.aiSummary ? undefined : signal.id, excerpt);
+  const signalSummary = signal.aiSummary || summary || excerpt || "Key developments from today's top signal.";
 
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -126,12 +132,19 @@ export function TopStoryCard({ signal, onOpen, onToggleSave, onShare, className 
             {signal.title}
           </fm.h3>
 
-          {/* Structured editorial summary — What happened · Why it matters · Who */}
+          {/* Signal Summary — AI briefing of the whole article (cache-first,
+              backed by the article-summary edge fn). Max 4 lines per spec. */}
+          <fm.span
+            variants={reduce ? undefined : item}
+            className="mt-3.5 font-mono-tight text-[9.5px] font-bold uppercase tracking-[0.10em] text-green"
+          >
+            Signal Summary
+          </fm.span>
           <fm.p
             variants={reduce ? undefined : item}
-            className="mt-3 max-w-[54ch] text-[15px] leading-relaxed text-white/70 line-clamp-2 sm:text-[15.5px]"
+            className="mt-1.5 max-w-[54ch] text-[15px] leading-relaxed text-white/70 line-clamp-4 sm:text-[15.5px]"
           >
-            {signal.whatHappened || signal.takeaway || "Key developments from today's top signal."}
+            {signalSummary}
           </fm.p>
           {signal.takeaway && (signal.whatHappened && signal.takeaway !== signal.whatHappened) && (
             <fm.div variants={reduce ? undefined : item} className="mt-2.5 flex gap-2">

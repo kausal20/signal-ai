@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
@@ -12,8 +13,13 @@ import Advisor from "./pages/Advisor.tsx";
 import Strategy from "./pages/Strategy.tsx";
 import Weekly from "./pages/Weekly.tsx";
 import AiPulsePage from "./ui-v2/pages/AiPulsePage.tsx";
+import PromptLibrary from "./pages/PromptLibrary.tsx";
 import { PhoneFrame } from "@/components/PhoneFrame";
 import { PageTransition } from "@/ui-v2/layouts/PageTransition";
+
+// Showcase is a fullscreen cinematic route — lazy-loaded so it never enters
+// the main bundle or the PhoneFrame layout.
+const Showcase = lazy(() => import("./pages/Showcase.tsx"));
 
 const queryClient = new QueryClient();
 
@@ -31,6 +37,7 @@ function AnimatedRoutes() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/ai-pulse" element={<AiPulsePage />} />
+          <Route path="/prompts" element={<PromptLibrary />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
@@ -42,13 +49,30 @@ function AnimatedRoutes() {
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <PhoneFrame>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <AnimatedRoutes />
-        </BrowserRouter>
-      </PhoneFrame>
+      <BrowserRouter>
+        <Routes>
+          {/* Showcase renders FULLSCREEN — outside the PhoneFrame wrapper */}
+          <Route
+            path="/showcase"
+            element={
+              <Suspense fallback={null}>
+                <Showcase />
+              </Suspense>
+            }
+          />
+          {/* All other app routes render inside the phone frame */}
+          <Route
+            path="*"
+            element={
+              <PhoneFrame>
+                <Toaster />
+                <Sonner />
+                <AnimatedRoutes />
+              </PhoneFrame>
+            }
+          />
+        </Routes>
+      </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );

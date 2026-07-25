@@ -41,6 +41,8 @@ export interface Signal {
   tag?: SignalTag;
   timeAgo?: string;        // pre-formatted, e.g. "3h ago"
   takeaway?: string;      // one-line "why it matters"
+  insight?: string;       // Signal AI "what matters" — grounded, prefetched with the feed
+  aiSummary?: string;     // Signal Summary — AI briefing of the full article (Top Story)
   critical?: boolean;
   saved?: boolean;
   // Structured editorial content for the Top Story card (grounded, from the feed).

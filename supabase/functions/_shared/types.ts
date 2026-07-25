@@ -28,6 +28,15 @@ export interface SourceConnector {
   news_query?: string | null;
   trust_score: number;
   enabled: boolean;
+  // UOCAE — universal connector fields (all optional so legacy rows still parse).
+  entity_id?: string | null;
+  connector_type?: string | null;   // rss/atom/api/sitemap/blog/newsroom/docs/changelog/releases/github/status/static/social
+  channel_type?: string | null;
+  feed_url?: string | null;         // primary acquisition URL for non-RSS types
+  url_pattern?: string | null;      // e.g. '/blog/*' for sitemap/blog filters
+  publisher_domain?: string | null;
+  etag?: string | null;
+  last_modified?: string | null;
 }
 
 export interface RawItem {

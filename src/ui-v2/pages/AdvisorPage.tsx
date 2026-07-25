@@ -13,6 +13,7 @@ import { SectionHeader } from "../components/SectionHeader";
 import { RecommendationCard } from "../components/RecommendationCard";
 import { Timeline } from "../components/Timeline";
 import { SignalProgress } from "../components/SignalProgress";
+import { PromptLibraryPreview } from "../components/PromptLibraryPreview";
 import { staggerContainer as container, fadeInUp as item, motionTokens } from "../animations/motion";
 import type { Recommendation, PlanStep, Project, SectionKey } from "../shared/types";
 
@@ -102,6 +103,11 @@ export function AdvisorPage({
             }
           />
           <Timeline steps={plan} onToggleStep={onToggleStep} />
+        </fm.section>
+
+        {/* PROMPT LIBRARY — preview only (3 featured). Full workspace at /prompts. */}
+        <fm.section variants={V} className="mb-[30px]">
+          <PromptLibraryPreview />
         </fm.section>
 
         {/* SKIP */}

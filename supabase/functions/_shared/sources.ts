@@ -357,9 +357,13 @@ export async function fetchProductHunt(): Promise<RawItem[]> {
 }
 
 // -------------------------------------------------------------------------
-// Stage 1: connector dispatch — turns a SourceConnector row into a fetch fn.
+// Stage 1: UOCAE Connector Factory — turns a SourceConnector row into a fetch
+// fn based on its `connector_type`. Every fetcher shares the same signature
+// (SourceConnector → Promise<RawItem[]>) so search/ingest/dedup never care
+// which transport was used. Adding a new transport = one case here.
 // -------------------------------------------------------------------------
 function baseConnectorFetch(c: SourceConnector): () => Promise<RawItem[]> {
+  // Special-source aliases retained for the built-in fetchers.
   switch (c.source) {
     case "github":         return fetchGithub;
     case "hn":             return fetchHN;
@@ -368,7 +372,22 @@ function baseConnectorFetch(c: SourceConnector): () => Promise<RawItem[]> {
     case "producthunt":    return fetchProductHunt;
     case "yc_discussions": return fetchYCDiscussions;
   }
-  // Generic RSS-or-Google-News connector for everything in the registry.
+
+  // UOCAE type-routed dispatch. Lazy-imported so the module boundary stays
+  // clean and RSS runs continue to work if any fetcher fails to load.
+  const type = (c.connector_type ?? "rss").toLowerCase();
+  if (type === "sitemap" || type === "blog" || type === "static" || type === "changelog" || type === "docs" || type === "newsroom" || type === "releases" || type === "github") {
+    return async () => {
+      try {
+        const { fetchSitemap, fetchStaticBlog, fetchGithubReleases } = await import("./fetchers.ts");
+        if (type === "sitemap")  return await fetchSitemap(c);
+        if (type === "releases" || type === "github") return await fetchGithubReleases(c);
+        return await fetchStaticBlog(c);   // blog/static/changelog/docs/newsroom
+      } catch (e) { console.error("[uocae] fetcher failed", c.source, e instanceof Error ? e.message : e); return []; }
+    };
+  }
+
+  // Default = RSS/Atom (Google-News fallback preserved via news_query).
   const maxAge =
     c.source.endsWith("_news") ? 24 * 14 :
     c.tier === "fast" ? 24 * 14 :

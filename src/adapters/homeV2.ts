@@ -190,20 +190,45 @@ export function formatTimeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+// Clean a grounded insight string: strip the pipeline's "Opportunity:" label,
+// any HTML/entity noise, and collapse whitespace. Never fabricates.
+function cleanInsight(s?: string | null): string | undefined {
+  if (!s) return undefined;
+  const out = s
+    .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/<[^>]+>/g, " ")
+    .replace(/\bOpportunity:\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return out.length >= 12 ? out : undefined;
+}
+
 // FeedItem → ui-v2 Signal (feed card / brief / top-signal row).
 export function mapSignal(item: FeedItem, saved: boolean): Signal {
   const intel = item.intel;
   const sourceIdentity = sourceIdentityFor(item);
+  // Some pipeline labels bake "(Official)"/"{Official}" into the publisher name.
+  // That's a verification signal, not part of the name: promote it to the badge
+  // and strip it from the displayed publisher.
+  const rawLabel = sourceIdentity.label;
+  const labelOfficial = /[[({]\s*official\s*[\])}]|\bofficial\b\s*$/i.test(rawLabel);
+  const cleanLabel = rawLabel.replace(/\s*[[({]\s*official\s*[\])}]\s*$/i, "").replace(/\s+official\s*$/i, "").trim() || rawLabel;
   const takeaway = intel?.personalizedTakeaway ?? intel?.recommendationReason ?? item.whyItMatters ?? undefined;
+  // Signal AI insight = grounded "what matters" that already ships with the feed
+  // (pipeline editorial `why_it_matters` / cached opportunity intel). Prefetched,
+  // cached in feed_items — no second request, no placeholder, no hallucination.
+  const insight = cleanInsight(
+    intel?.opportunity?.explanation ?? item.whyItMatters ?? intel?.recommendationReason,
+  );
   return {
     id: item.id,
     title: item.title,
-    source: sourceIdentity.label,
+    source: cleanLabel,
     sourceKey: sourceIdentity.key,
     score: Math.round(intel?.signalScore ?? item.score ?? 0),
     tag: item.tag,
     timeAgo: formatTimeAgo(item.timestamp),
     takeaway: takeaway || undefined,
+    insight,
     critical: item.impact === "critical",
     saved,
     // Structured content for the Top Story card (grounded feed fields).
@@ -215,6 +240,7 @@ export function mapSignal(item: FeedItem, saved: boolean): Signal {
     domain: domainOf(item.url),
     publishedAt: item.timestamp,
     verified: !!sourceIdentity.key,   // a resolved brand logo ⇒ recognized publisher
+    isOfficial: isOfficialItem(item, sourceIdentity.key) || labelOfficial,
   };
 }
 

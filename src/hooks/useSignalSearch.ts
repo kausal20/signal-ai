@@ -18,6 +18,7 @@ interface SearchRow {
   content_type?: string; section?: string;
   is_official_company_news?: boolean; is_official_source?: boolean;
   event_type?: string; editorial_quality_score?: number;
+  ai_summary?: string;
 }
 
 function rowToSignal(r: SearchRow): Signal {
@@ -48,6 +49,7 @@ function rowToSignal(r: SearchRow): Signal {
     contentType: r.content_type || undefined,
     eventType: r.event_type || undefined,
     isOfficial: r.is_official_source === true,
+    aiSummary: r.ai_summary || undefined,
   };
 }
 

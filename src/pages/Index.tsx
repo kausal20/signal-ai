@@ -22,7 +22,7 @@ import { FeedSkeleton } from "@/components/Skeleton";
 import { SavedCollections } from "@/components/SavedCollections";
 import { initSignals, track, trackOutcome } from "@/lib/signals";
 import { touchProject, getProject } from "@/lib/projects";
-import { TAGS } from "@/data/feed";
+import { HOME_CATEGORIES, withProgressiveFreshness, type HomeCategoryId } from "@/lib/categories";
 import { HomePage } from "@/ui-v2/pages/HomePage";
 import { SearchPage } from "@/ui-v2/pages/SearchPage";
 import { SavedPage } from "@/ui-v2/pages/SavedPage";
@@ -122,15 +122,21 @@ const Index = () => {
   // filter below when the `search` function isn't deployed yet.
   const backendSearch = useSignalSearch(query, isSearchSection);
 
+  // Multi-category filter (topic-based, not resource-based). An article can
+  // belong to many categories at once — News + Models + Companies routinely
+  // overlap — so `isInCategory` uses inclusive membership. Recency uses a
+  // progressive window (24h → 3d → 7d → 30d) so no category ever feels empty
+  // when real intelligence exists further back.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return FEED.filter((it) => {
+    const base = FEED.filter((it) => {
       if ((it.score ?? 0) < 50) return false;
       if (isSavedSection && !bookmarks.includes(it.id)) return false;
       if (q && !`${it.title} ${it.summary} ${it.whyItMatters}`.toLowerCase().includes(q)) return false;
-      if (activeSection === "home" && activeTab !== "all" && it.tag !== activeTab) return false;
       return true;
     });
+    if (activeSection !== "home" || activeTab === "all") return base;
+    return withProgressiveFreshness(base, activeTab as HomeCategoryId).items;
   }, [query, isSavedSection, bookmarks, FEED, activeTab, activeSection]);
 
   // Derive the briefing hierarchy (hero / chips / top-3 / feed / missed) for the
@@ -205,7 +211,7 @@ const Index = () => {
   const emptyMessage = (() => {
     if (isSavedSection) return "You haven't saved any items yet. Bookmark stories you want to revisit.";
     if (isSearchSection) return isSearching ? "No matching intelligence found." : "Search AI news, tools, and workflows.";
-    if (activeTab !== "all") return `No ${activeTab} items right now. Try a different category.`;
+    if (activeTab !== "all") return `Signal has no recent ${activeTab} intelligence yet. New stories appear as they're published.`;
     return "Try adjusting your filters.";
   })();
 
@@ -241,6 +247,7 @@ const Index = () => {
     };
 
     return (
+      <PullToRefresh onRefresh={refresh}>
       <HomePage
         profile={{
           name,
@@ -258,7 +265,7 @@ const Index = () => {
         brief={briefItems.map((i) => mapSignal(i, bookmarks.includes(i.id)))}
         topSignals={topItems.map((i) => mapSignal(i, bookmarks.includes(i.id)))}
         feed={feedItems.map((i) => mapSignal(i, bookmarks.includes(i.id)))}
-        categories={[{ id: "all", label: "All" }, ...TAGS.map((t) => ({ id: t.id, label: t.label }))]}
+        categories={HOME_CATEGORIES}
         activeCategory={activeTab}
         bookmarkCount={bookmarks.length}
         project={mapProject(getProject(), FEED)}
@@ -267,10 +274,34 @@ const Index = () => {
         onSelectCategory={(id) => setActiveTab(id)}
         onOpenSignal={openSignal}
         onToggleSave={toggleBookmark}
+        onAskSignal={(id) => {
+          const a = FEED.find((i) => i.id === id);
+          if (!a) return;
+          track("opened", { feed_item_id: id });
+          navigate("/", {
+            state: {
+              openAsk: true,
+              article: {
+                article_id: a.id,
+                headline: a.title,
+                summary: (a as any).what_happened ?? a.summary,
+                publisher: a.sourceLabel ?? a.source,
+                publisher_domain: a.url ? (() => { try { return new URL(a.url).hostname.replace(/^www\./, ""); } catch { return undefined; } })() : undefined,
+                published_at: a.timestamp,
+                source_type: a.intel?.whyPicked?.some((w) => /official/i.test(w)) ? "OFFICIAL_SOURCE" : undefined,
+                impact_score: Math.round(a.intel?.signalScore ?? a.score ?? 0),
+                event_type: a.category,
+                primary_entity: (a.trend_entities ?? [])[0],
+                article_url: a.url,
+              },
+            },
+          });
+        }}
         onStartHero={(id) => { track("opened", { feed_item_id: id }); navigate("/advisor"); }}
         onToggleHeroSave={(id) => toggleBookmark(id)}
         onContinueProject={(id) => { touchProject(); track("opened", { feed_item_id: id }); }}
       />
+      </PullToRefresh>
     );
   }
 

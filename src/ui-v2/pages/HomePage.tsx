@@ -55,6 +55,8 @@ interface Props {
   onSelectCategory?: (id: string) => void;
   onOpenSignal?: (id: string) => void;
   onToggleSave?: (id: string) => void;
+  /** Opens the single Signal AI screen with the story attached as context. */
+  onAskSignal?: (id: string) => void;
   onStartHero?: (id: string) => void;
   onToggleHeroSave?: (id: string) => void;
   onContinueProject?: (id: string) => void;
@@ -78,7 +80,7 @@ export function HomePage({
   profile, briefSummary, livePulseLabel = "3 critical signals in the last hour",
   emptyLabel, brief, topSignals, feed, categories = [], activeCategory,
   bookmarkCount = 0, onNavigate, onOpenProfile, onSelectCategory,
-  onOpenSignal, onToggleSave,
+  onOpenSignal, onToggleSave, onAskSignal,
 }: Props) {
   const reduce = useReducedMotion();
   const anim = reduce
@@ -316,23 +318,13 @@ export function HomePage({
         {latest.length > 0 && (
           <section aria-label="Latest stories">
             <SectionHeader title="Latest Stories" />
-            <div className="relative">
-              {/* timeline spine */}
-              <div className="pointer-events-none absolute left-[6px] top-3 bottom-3 w-px bg-gradient-to-b from-green/40 via-white/[0.06] to-transparent" />
-              <fm.div variants={reduce ? undefined : container} {...anim} className="flex flex-col">
-                {latest.map((s) => (
-                  <fm.div key={s.id} variants={reduce ? undefined : fadeUp} className="relative pl-6">
-                    {/* timeline node */}
-                    <span aria-hidden className="absolute left-[3px] top-[26px] h-[7px] w-[7px] rounded-full border border-green/50 bg-background">
-                      <span className="absolute inset-[1.5px] rounded-full bg-green/70" />
-                    </span>
-                    <div className="border-b border-white/[0.05]">
-                      <FeedCard signal={s} onOpen={onOpenSignal} onToggleSave={onToggleSave} />
-                    </div>
-                  </fm.div>
-                ))}
-              </fm.div>
-            </div>
+            <fm.div variants={reduce ? undefined : container} {...anim} className="flex flex-col">
+              {latest.map((s) => (
+                <fm.div key={s.id} variants={reduce ? undefined : fadeUp}>
+                  <FeedCard signal={s} onOpen={onOpenSignal} onToggleSave={onToggleSave} onAsk={onAskSignal} />
+                </fm.div>
+              ))}
+            </fm.div>
           </section>
         )}
 
