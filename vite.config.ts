@@ -13,6 +13,20 @@ export default defineConfig(({ mode }) => ({
     },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
+  build: {
+    rollupOptions: {
+      output: {
+        // Split rarely-changing vendor code into its own long-cached chunk so
+        // repeat visits only re-download app code, not React/motion/data libs.
+        manualChunks: {
+          "react-vendor": ["react", "react-dom", "react-router-dom"],
+          "motion-vendor": ["framer-motion"],
+          "data-vendor": ["@tanstack/react-query", "@supabase/supabase-js"],
+          "chart-vendor": ["recharts"],
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

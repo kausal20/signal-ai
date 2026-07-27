@@ -5,7 +5,7 @@
 // lines) → inline Signal AI insight. Everything non-decision-making removed
 // (NEWS/SOURCE labels, separators, extra badges). Readability over metadata.
 // ---------------------------------------------------------------------------
-import { useCallback } from "react";
+import { useCallback, memo } from "react";
 import { Bookmark, Globe, Sparkles, ArrowRight } from "lucide-react";
 import { motion as fm, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -23,7 +23,7 @@ interface Props {
   className?: string;
 }
 
-export function FeedCard({ signal, onOpen, onToggleSave, onAsk, className }: Props) {
+function FeedCardImpl({ signal, onOpen, onToggleSave, onAsk, className }: Props) {
   const { id, title, source, sourceKey, timeAgo, insight, saved, url } = signal;
   const reduce = useReducedMotion();
 
@@ -117,3 +117,16 @@ export function FeedCard({ signal, onOpen, onToggleSave, onAsk, className }: Pro
     </fm.article>
   );
 }
+
+// Memoized: Index re-maps the whole feed into new Signal objects on every render
+// (e.g. a single bookmark toggle). This comparator re-renders a card ONLY when a
+// field it actually paints changes — so toggling one bookmark re-renders one card
+// instead of the entire list. Callbacks must be stable (useCallback upstream).
+export const FeedCard = memo(FeedCardImpl, (a, b) =>
+  a.onOpen === b.onOpen && a.onToggleSave === b.onToggleSave && a.onAsk === b.onAsk &&
+  a.className === b.className &&
+  a.signal.id === b.signal.id && a.signal.saved === b.signal.saved &&
+  a.signal.title === b.signal.title && a.signal.insight === b.signal.insight &&
+  a.signal.source === b.signal.source && a.signal.timeAgo === b.signal.timeAgo &&
+  a.signal.sourceKey === b.signal.sourceKey && a.signal.url === b.signal.url,
+);

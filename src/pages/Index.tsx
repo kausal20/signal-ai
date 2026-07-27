@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { BottomNav } from "@/components/BottomNav";
@@ -24,6 +24,7 @@ import { initSignals, track, trackOutcome } from "@/lib/signals";
 import { touchProject, getProject } from "@/lib/projects";
 import { HOME_CATEGORIES, withProgressiveFreshness, type HomeCategoryId } from "@/lib/categories";
 import { HomePage } from "@/ui-v2/pages/HomePage";
+import { HomePageSkeleton } from "@/ui-v2/components/SignalSkeleton";
 import { SearchPage } from "@/ui-v2/pages/SearchPage";
 import { SavedPage } from "@/ui-v2/pages/SavedPage";
 import { trendingSearches, featuredCollections } from "@/components/SearchDiscovery";
@@ -169,9 +170,10 @@ const Index = () => {
     return { hero, chips, top3, feed, missed };
   }, [filtered, activeSection, activeTab, advisor, FEED, bookmarks]);
 
-  if (onboardingLoading) return null;
-
-  const toggleBookmark = (id: string) =>
+  // Stable card callbacks — memoized so FeedCard / TopStoryCard (React.memo)
+  // don't re-render when Index re-renders for unrelated reasons. Toggling one
+  // bookmark now re-renders one card instead of the whole feed.
+  const toggleBookmark = useCallback((id: string) =>
     setBookmarks((prev) => {
       const has = prev.includes(id);
       if (has) {
@@ -181,7 +183,35 @@ const Index = () => {
       track("bookmarked", { feed_item_id: id });
       trackOutcome("saved", id);                     // outcome: user found it worth keeping
       return [...prev, id];
+    }), []);
+
+  const openSignalCb = useCallback((id: string) => track("opened", { feed_item_id: id }), []);
+
+  const handleAskSignal = useCallback((id: string) => {
+    const a = FEED.find((i) => i.id === id);
+    if (!a) return;
+    track("opened", { feed_item_id: id });
+    navigate("/", {
+      state: {
+        openAsk: true,
+        article: {
+          article_id: a.id,
+          headline: a.title,
+          summary: (a as any).what_happened ?? a.summary,
+          publisher: a.sourceLabel ?? a.source,
+          publisher_domain: a.url ? (() => { try { return new URL(a.url).hostname.replace(/^www\./, ""); } catch { return undefined; } })() : undefined,
+          published_at: a.timestamp,
+          source_type: a.intel?.whyPicked?.some((w) => /official/i.test(w)) ? "OFFICIAL_SOURCE" : undefined,
+          impact_score: Math.round(a.intel?.signalScore ?? a.score ?? 0),
+          event_type: a.category,
+          primary_entity: (a.trend_entities ?? [])[0],
+          article_url: a.url,
+        },
+      },
     });
+  }, [FEED, navigate]);
+
+  if (onboardingLoading) return null;
 
   // Chip / "missed" tap → smooth-scroll to the story card + record the open.
   const scrollToStory = (id: string) => {
@@ -219,6 +249,13 @@ const Index = () => {
   // Presentation swap only. Same hooks, same handlers, same personalized data
   // (briefing) fed through adapters. Old Home below stays as the fallback for
   // loading/empty and while USE_V2_HOME can be flipped off.
+  // Cold start (no cached feed yet): show a Home skeleton that MIRRORS the v2
+  // layout so the real page swaps in with zero shift — instead of falling
+  // through to the old v1 loading screen (which caused the re-layout jump).
+  if (USE_V2_HOME && activeSection === "home" && status.loading && FEED.length === 0) {
+    return <HomePageSkeleton />;
+  }
+
   if (
     USE_V2_HOME &&
     activeSection === "home" &&
@@ -237,7 +274,6 @@ const Index = () => {
     const readMins = Math.max(1, Math.round(filtered.length * 0.7));
     const name = (typeof localStorage !== "undefined" && localStorage.getItem("signal:userName")) || "there";
 
-    const openSignal = (id: string) => track("opened", { feed_item_id: id });
     const navSection = (s: string) => {
       if (s === "home") goHome();
       else if (s === "search") goSearch();
@@ -272,31 +308,9 @@ const Index = () => {
         onNavigate={navSection}
         onOpenProfile={() => navigate("/settings")}
         onSelectCategory={(id) => setActiveTab(id)}
-        onOpenSignal={openSignal}
+        onOpenSignal={openSignalCb}
         onToggleSave={toggleBookmark}
-        onAskSignal={(id) => {
-          const a = FEED.find((i) => i.id === id);
-          if (!a) return;
-          track("opened", { feed_item_id: id });
-          navigate("/", {
-            state: {
-              openAsk: true,
-              article: {
-                article_id: a.id,
-                headline: a.title,
-                summary: (a as any).what_happened ?? a.summary,
-                publisher: a.sourceLabel ?? a.source,
-                publisher_domain: a.url ? (() => { try { return new URL(a.url).hostname.replace(/^www\./, ""); } catch { return undefined; } })() : undefined,
-                published_at: a.timestamp,
-                source_type: a.intel?.whyPicked?.some((w) => /official/i.test(w)) ? "OFFICIAL_SOURCE" : undefined,
-                impact_score: Math.round(a.intel?.signalScore ?? a.score ?? 0),
-                event_type: a.category,
-                primary_entity: (a.trend_entities ?? [])[0],
-                article_url: a.url,
-              },
-            },
-          });
-        }}
+        onAskSignal={handleAskSignal}
         onStartHero={(id) => { track("opened", { feed_item_id: id }); navigate("/advisor"); }}
         onToggleHeroSave={(id) => toggleBookmark(id)}
         onContinueProject={(id) => { touchProject(); track("opened", { feed_item_id: id }); }}

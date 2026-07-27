@@ -71,12 +71,43 @@ function rowToItem(r: DbRow): FeedItem & { publishedAt: string; fetchedAt: strin
 // Module-level guard: only auto-trigger ingestion once per browser session.
 let _autoIngestTriggered = false;
 
+// ── Stale-while-revalidate feed cache ───────────────────────────────────────
+// Memory + localStorage so reopening Home paints INSTANTLY from the last feed,
+// then revalidates in the background. Kills the "blank Home → sections pop in"
+// experience on every navigation/reopen. Cache holds mapped FeedItems.
+const FEED_CACHE_KEY = "signal:feed:v1";
+let _memFeed: (FeedItem & { publishedAt?: string; fetchedAt?: string })[] | null = null;
+
+function readFeedCache(): typeof _memFeed {
+  if (_memFeed) return _memFeed;
+  try {
+    const raw = localStorage.getItem(FEED_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed?.items) && parsed.items.length > 0) {
+      _memFeed = parsed.items;
+      return _memFeed;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+function writeFeedCache(items: (FeedItem & { publishedAt?: string; fetchedAt?: string })[], fetchedAt: string | null) {
+  _memFeed = items;
+  try {
+    // Cap what we persist (top 80) to stay well under storage limits.
+    localStorage.setItem(FEED_CACHE_KEY, JSON.stringify({ items: items.slice(0, 80), fetchedAt, cachedAt: Date.now() }));
+  } catch { /* quota / private mode — memory cache still works */ }
+}
+
 export function useLiveFeed() {
-  const [items, setItems] = useState<FeedItem[]>([]);
+  const cached = readFeedCache();
+  const [items, setItems] = useState<FeedItem[]>(cached ?? []);
   const [status, setStatus] = useState<FetchStatus>({
     lastFetchAt: null,
-    itemCount: 0,
-    loading: true,
+    itemCount: cached?.length ?? 0,
+    // Cache present ⇒ we already have content to paint; not "loading" (blank).
+    loading: !cached,
     error: null,
     sources: null,
     triggeredAt: null,
@@ -94,6 +125,7 @@ export function useLiveFeed() {
     }
     const mapped = (data ?? []).map(rowToItem);
     setItems(mapped);
+    writeFeedCache(mapped, mapped[0]?.fetchedAt ?? null);
     setStatus((s) => ({
       ...s,
       loading: false,

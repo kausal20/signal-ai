@@ -10,6 +10,7 @@
 //     </PageTransition>
 //   </AnimatePresence>
 // ---------------------------------------------------------------------------
+import { forwardRef } from "react";
 import { motion as fm, useReducedMotion } from "framer-motion";
 import { pageVariants } from "../animations/motion";
 
@@ -19,15 +20,16 @@ interface Props {
 }
 
 /**
- * Animates page transitions with fade + slide + blur.
- * Wrap each route's content to get smooth enter/exit transitions.
+ * Animates page transitions with fade + slide. forwardRef so AnimatePresence
+ * `mode="popLayout"` can measure the exiting page and keep navigation
+ * interruptible (a second nav cancels the first instead of queueing).
  */
-export function PageTransition({ children, className }: Props) {
+export const PageTransition = forwardRef<HTMLDivElement, Props>(function PageTransition({ children, className }, ref) {
   const reduce = useReducedMotion();
 
   if (reduce) {
     return (
-      <div className={className} style={{ height: "100%", width: "100%" }}>
+      <div ref={ref} className={className} style={{ height: "100%", width: "100%" }}>
         {children}
       </div>
     );
@@ -35,6 +37,7 @@ export function PageTransition({ children, className }: Props) {
 
   return (
     <fm.div
+      ref={ref}
       variants={pageVariants}
       initial="initial"
       animate="animate"
@@ -45,4 +48,4 @@ export function PageTransition({ children, className }: Props) {
       {children}
     </fm.div>
   );
-}
+});

@@ -4,6 +4,7 @@
 // smooth exit animation via Framer Motion AnimatePresence.
 // ---------------------------------------------------------------------------
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion as fm, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { modalVariants, backdropVariants } from "../animations/motion";
@@ -43,7 +44,7 @@ export function SignalModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  return (
+  const content = (
     <AnimatePresence>
       {open && (
         <fm.div
@@ -69,7 +70,7 @@ export function SignalModal({
             animate="animate"
             exit="exit"
             className={cn(
-              "bg-[#101410] shadow-[0_30px_70px_hsl(0_0%_0%/0.6)]",
+              "bg-[#101410] shadow-[0_30px_70px_hsl(0_0%_0%/0.6)] max-h-[85vh] overflow-y-auto no-scrollbar",
               variant === "sheet"
                 ? "m-3.5 w-full rounded-3xl p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
                 : "w-full max-w-sm rounded-3xl p-6",
@@ -83,4 +84,15 @@ export function SignalModal({
       )}
     </AnimatePresence>
   );
+
+  // Portal to the overlay root PhoneFrame reserves for exactly this purpose —
+  // it sits OUTSIDE the scrollable/overflow-hidden content wrapper, so the
+  // modal (and its bottom-nav-covering CTAs) can never be clipped by a
+  // parent screen's `overflow-hidden`. Falls back to document.body (e.g.
+  // Showcase route, which renders outside PhoneFrame).
+  const target = typeof document !== "undefined"
+    ? document.getElementById("signal-overlay-root") ?? document.body
+    : null;
+  if (!target) return null;
+  return createPortal(content, target);
 }

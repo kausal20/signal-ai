@@ -7,6 +7,7 @@
 // pinned to the bottom, equal width/height, regardless of text length.
 // A keyed AnimatePresence swaps stories with a staggered reveal.
 // ---------------------------------------------------------------------------
+import { memo } from "react";
 import { AnimatePresence, motion as fm, useReducedMotion, type Variants } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { Bookmark, Share2, Clock, ArrowRight, Sparkles } from "lucide-react";
@@ -55,7 +56,7 @@ const item: Variants = {
   show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 380, damping: 30, mass: 0.7 } },
 };
 
-export function TopStoryCard({ signal, onOpen, onToggleSave, onShare, className = "" }: Props) {
+function TopStoryCardImpl({ signal, onOpen, onToggleSave, onShare, className = "" }: Props) {
   const reduce = useReducedMotion();
   const navigate = useNavigate();
   const badge = eventBadge(signal.title, signal.category, signal.tag);
@@ -230,6 +231,16 @@ export function TopStoryCard({ signal, onOpen, onToggleSave, onShare, className 
     </fm.article>
   );
 }
+
+// Memoized so Home-level state changes (bookmarks, tab, brief) don't re-render
+// the hero or re-trigger its Signal Summary fetch when nothing it paints changed.
+export const TopStoryCard = memo(TopStoryCardImpl, (a, b) =>
+  a.onOpen === b.onOpen && a.onToggleSave === b.onToggleSave && a.onShare === b.onShare &&
+  a.className === b.className &&
+  a.signal.id === b.signal.id && a.signal.saved === b.signal.saved &&
+  a.signal.title === b.signal.title && a.signal.aiSummary === b.signal.aiSummary &&
+  a.signal.whatHappened === b.signal.whatHappened && a.signal.takeaway === b.signal.takeaway,
+);
 
 // ── Editorial loading skeleton (shimmer, matches the card's rhythm) ────────
 export function TopStoryCardSkeleton({ className = "" }: { className?: string }) {

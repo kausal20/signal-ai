@@ -121,41 +121,6 @@ export function WelcomeStep({ peek = DEFAULT_PEEK, onGetStarted }: Props) {
 
       {/* ── Bottom content block ───────────────────────────────────────── */}
       <div className="absolute inset-x-0 bottom-0 flex animate-fade-up flex-col items-start px-7 pb-[40px]">
-        {/* Radar-style logo mark */}
-        <div className="relative mb-5 flex h-[52px] w-[52px] items-center justify-center">
-          {/* Expanding pulse ring 1 */}
-          <span
-            className="absolute inset-0 rounded-[14px] border border-green/30"
-            style={{
-              animation: "radarPulse 3s ease-out infinite",
-            }}
-          />
-          {/* Expanding pulse ring 2 (half-cycle delay) */}
-          <span
-            className="absolute inset-0 rounded-[14px] border border-green/30"
-            style={{
-              animation: "radarPulse 3s ease-out 1.5s infinite",
-            }}
-          />
-          {/* Badge */}
-          <div
-            className="relative z-10 flex h-[42px] w-[42px] items-center justify-center rounded-[12px] border border-green/25"
-            style={{
-              background:
-                "radial-gradient(circle at 40% 35%, hsl(152 72% 54% / 0.28), hsl(152 72% 48% / 0.08) 55%, hsl(0 0% 5% / 0.92) 85%)",
-              boxShadow: "0 8px 28px hsl(152 72% 48% / 0.18)",
-            }}
-          >
-            <img
-              src="/signal-mark.png"
-              alt="Signal"
-              width={26}
-              height={26}
-              className="h-[26px] w-[26px] object-contain drop-shadow-[0_0_10px_hsl(152_72%_48%/0.45)]"
-            />
-          </div>
-        </div>
-
         {/* Eyebrow label */}
         <div className="mb-3.5 text-[10px] font-bold tracking-[0.24em] text-green">
           SIGNAL · AI INTELLIGENCE
@@ -163,7 +128,7 @@ export function WelcomeStep({ peek = DEFAULT_PEEK, onGetStarted }: Props) {
 
         {/* Headline */}
         <h1 className="mb-4 text-[34px] font-extrabold leading-[1.08] tracking-[-0.03em] text-foreground">
-          Every breakthrough.<br />None of the noise.
+          <span className="text-green">AI</span> intelligence.<br />Zero noise.
         </h1>
 
         {/* Subheadline */}
