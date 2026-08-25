@@ -14,8 +14,9 @@ export const PhoneFrame = ({ children }: { children: React.ReactNode }) => {
           <div className="w-2.5 h-2.5 rounded-full bg-zinc-800/80"></div>
         </div>
         
-        {/* App Content */}
-        <div className="flex-1 w-full h-full relative overflow-y-auto overflow-x-hidden no-scrollbar">
+        {/* App Content — id targeted by AskSignalOverlay to scale/dim Home
+            behind the Ask Signal bottom sheet while it's open. */}
+        <div id="app-content-root" className="flex-1 w-full h-full relative overflow-y-auto overflow-x-hidden no-scrollbar">
           {children}
         </div>
 

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useLiveFeed } from "@/hooks/useLiveFeed";
 import { getClientId, getPersona } from "@/lib/clientId";
+import { normalizeUrl } from "@/lib/url";
 import type { FeedItem, PersonalIntel } from "@/data/feed";
 
 interface PersonalizeCard {
@@ -29,6 +30,9 @@ interface PersonalizeCard {
   recommendation_reason?: string;
   why_signal_picked_this?: string[];
   trend?: PersonalIntel["trend"];
+  /** Real publisher when known (e.g. "TechCrunch"); backend falls back to a
+   * clean "Signal" for genuine archive-only rows — never an internal key. */
+  source_label?: string;
 }
 
 // Materialise a personalize card (which may be an archive-sourced supplement not
@@ -43,9 +47,17 @@ function cardToFeedItem(c: PersonalizeCard, intel?: PersonalIntel): FeedItem {
     what_happened: c.what_happened ?? "",
     who_for: "",
     opportunity: "",
-    url: c.url ?? "#",
+    // Archive-supplement rows can carry empty/redirect/malformed URLs — the old
+    // `?? "#"` placeholder masked that. Normalize → "" so the button is hidden.
+    url: normalizeUrl(c.url) ?? "",
     tag: "news",
-    source: "Signal archive",
+    // "blog" is this codebase's existing "generic source, defer to the real
+    // label" convention (see sourceIdentityFor in adapters/homeV2.ts) — never
+    // display an internal identifier. Real publisher passes through via
+    // sourceLabel when the backend knows it; otherwise it resolves to a clean
+    // "Signal" (sourceLabelFor's own built-in fallback for an empty label).
+    source: "blog",
+    sourceLabel: c.source_label && c.source_label !== "Signal archive" ? c.source_label : undefined,
     category: (c.content_category as any) ?? "news",
     content_category: c.content_category ?? "Must Know",
     score,

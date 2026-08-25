@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { sourceKeyFor, sourceLabelFor, formatTimeAgo } from "@/adapters/homeV2";
+import { normalizeUrl } from "@/lib/url";
 import type { Signal } from "@/ui-v2/shared/types";
 
 interface SearchRow {
@@ -29,7 +30,7 @@ function rowToSignal(r: SearchRow): Signal {
   // Logo keys off the publisher domain/name when we have a bundled brand asset.
   const key = sourceKeyFor(r.publisher_domain || "") || sourceKeyFor(publisher);
   // Source button must open the REAL article, not a Google-News redirect.
-  const url = typeof (r.original_url || r.url) === "string" ? (r.original_url || r.url) : undefined;
+  const url = normalizeUrl(r.original_url || r.url) ?? undefined;
   let domain = r.publisher_domain || "";
   if (!domain && url) { try { domain = new URL(url).hostname.replace(/^www\./, ""); } catch { /* ignore */ } }
   return {
@@ -68,6 +69,8 @@ export interface SignalSearchState {
   error: string | null;
   /** Set to "trending" when backend returned fallback content instead of real matches. */
   fallback: string | null;
+  /** Re-runs the current query (pull-to-refresh). No-op when the query is empty. */
+  refresh: () => void;
 }
 
 function errorMessage(error: unknown): string {
@@ -134,8 +137,12 @@ async function invokeBackendSearch(q: string) {
 }
 
 export function useSignalSearch(query: string, enabled: boolean): SignalSearchState {
-  const [state, setState] = useState<SignalSearchState>({ results: [], related: [], suggestions: [], loading: false, ready: false, error: null, fallback: null });
+  const [state, setState] = useState<Omit<SignalSearchState, "refresh">>({ results: [], related: [], relatedProducts: [], relatedFallback: "none", suggestions: [], loading: false, ready: false, error: null, fallback: null });
   const seq = useRef(0);
+  // Bumping this re-runs the effect below even when query/enabled haven't
+  // changed — pull-to-refresh re-fetches the current query.
+  const [nonce, setNonce] = useState(0);
+  const refresh = () => setNonce((n) => n + 1);
 
   useEffect(() => {
     const q = query.trim();
@@ -178,7 +185,7 @@ export function useSignalSearch(query: string, enabled: boolean): SignalSearchSt
     }, 250);
 
     return () => clearTimeout(t);
-  }, [query, enabled]);
+  }, [query, enabled, nonce]);
 
-  return state;
+  return { ...state, refresh };
 }

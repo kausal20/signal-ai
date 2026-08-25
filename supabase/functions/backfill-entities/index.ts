@@ -37,6 +37,7 @@ import { classifyContentType, splitPublisherSuffix, domainOf, type ContentType }
 import { classifyEditorial, isOfficialCompanyNewsForArchive } from "../_shared/editorial.ts";
 import { classifySourceType, entityOwnsDomain } from "../_shared/source_type.ts";
 import { decodeGoogleNewsUrl } from "../_shared/sources.ts";
+import { normalizeUrl } from "../_shared/url.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -476,7 +477,10 @@ async function runDecodeUrls(sb: any, chunk: number, t0: number): Promise<Respon
     for (let i = 0; i < rows.length; i += 6) {
       const batch = rows.slice(i, i + 6);
       await Promise.all(batch.map(async (r) => {
-        const real = await resolveRealUrl(r.url);
+        // Normalize the decoded link with the shared rules. If it still isn't a
+        // real article (e.g. resolves back to a google shell), leave original_url
+        // null rather than storing an invalid URL.
+        const real = normalizeUrl(await resolveRealUrl(r.url));
         if (!real) return;
         let host = "";
         try { host = new URL(real).hostname.replace(/^www\./, "").toLowerCase(); } catch { /* ignore */ }

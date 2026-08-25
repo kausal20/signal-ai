@@ -1,0 +1,560 @@
+<title>Signal — See It First</title>
+<style>
+  :root{
+    --bg:#080808;
+    --fg:#f0f2f0;
+    --muted:#6a6f6c;
+    --dim:#3a3f3c;
+    --green:#22c58e;
+    --green-soft:#1aa374;
+    --green-glow:rgba(34,197,142,.35);
+    --amber:#f5b338;
+    --surface:rgba(255,255,255,.035);
+    --surface-hi:rgba(255,255,255,.06);
+    --border:rgba(255,255,255,.08);
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --mono:'JetBrains Mono','SFMono-Regular',Menlo,Consolas,monospace;
+    --ease-spring:cubic-bezier(.34,1.56,.64,1);
+    --ease-smooth:cubic-bezier(.2,0,0,1);
+    --ease-out:cubic-bezier(.22,1,.36,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;background:#000;color:var(--fg);font-family:var(--sans);overflow:hidden}
+  body{display:grid;place-items:center;min-height:100vh}
+
+  .stage{
+    position:relative;
+    width:min(96vw, calc(96vh * 16 / 9));
+    aspect-ratio:16/9;
+    background:radial-gradient(ellipse at center, #0c0d0c 0%, #050505 65%, #000 100%);
+    border-radius:14px;
+    overflow:hidden;
+    box-shadow:0 30px 120px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.04);
+    isolation:isolate;
+  }
+
+  /* Ambient film grain */
+  .grain{
+    position:absolute;inset:-50%;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.35 0'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.55'/></svg>");
+    opacity:.07;
+    mix-blend-mode:overlay;
+    pointer-events:none;
+    animation:grain-drift 8s steps(6) infinite;
+    z-index:60;
+  }
+  @keyframes grain-drift{
+    0%{transform:translate(0,0)}
+    100%{transform:translate(-8%,6%)}
+  }
+  /* Vignette */
+  .vignette{
+    position:absolute;inset:0;
+    background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.55) 100%);
+    pointer-events:none;z-index:55;
+  }
+
+  /* Corner HUD */
+  .hud{
+    position:absolute;top:22px;left:24px;
+    font-family:var(--mono);font-size:11px;color:var(--muted);
+    letter-spacing:.06em;
+    opacity:0;animation:hud-in .5s var(--ease-out) .35s forwards, hud-out .6s var(--ease-out) 13.6s forwards;
+    z-index:40;
+  }
+  .hud .row{display:flex;gap:14px;align-items:center}
+  .hud .dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green-glow)}
+  .hud .k{color:var(--dim)}
+  @keyframes hud-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  @keyframes hud-out{to{opacity:0}}
+
+  .hud-r{
+    position:absolute;top:22px;right:24px;
+    font-family:var(--mono);font-size:11px;color:var(--muted);
+    letter-spacing:.06em;text-align:right;
+    opacity:0;animation:hud-in .5s var(--ease-out) .45s forwards, hud-out .6s var(--ease-out) 13.6s forwards;
+    z-index:40;
+  }
+
+  /* ── BEAT 1: radar ping ────────────────────────── */
+  .ping-wrap{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:14px;height:14px;z-index:20;
+  }
+  .ping-core{
+    position:absolute;inset:0;border-radius:50%;
+    background:var(--green);
+    box-shadow:0 0 24px 4px var(--green-glow), 0 0 60px 10px rgba(34,197,142,.15);
+    animation-name:ping-pulse, ping-fade;
+    animation-duration:1.1s, .5s;
+    animation-timing-function:var(--ease-out), ease-out;
+    animation-delay:0s, 2500ms;
+    animation-iteration-count:2, 1;
+    animation-fill-mode:forwards, forwards;
+  }
+  .ping-ring{
+    position:absolute;inset:0;border-radius:50%;
+    border:1.5px solid var(--green);
+    opacity:0;
+    animation-name:ping-ring, ping-fade;
+    animation-duration:1.1s, .5s;
+    animation-timing-function:var(--ease-out), ease-out;
+    animation-delay:0s, 2500ms;
+    animation-iteration-count:2, 1;
+    animation-fill-mode:none, forwards;
+  }
+  .ping-ring.d{animation-delay:.35s, 2500ms}
+  @keyframes ping-pulse{
+    0%,100%{transform:scale(1);opacity:1}
+    50%{transform:scale(1.35);opacity:.7}
+  }
+  @keyframes ping-ring{
+    0%{transform:scale(1);opacity:.9}
+    100%{transform:scale(6);opacity:0}
+  }
+  @keyframes ping-fade{to{opacity:0}}
+
+  /* ── BEAT 2: waveform → wordmark ──────────────── */
+  .wave{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:44%;height:auto;z-index:22;
+    opacity:0;
+    animation-name:wave-in, wave-out;
+    animation-duration:.5s, .5s;
+    animation-timing-function:var(--ease-out), var(--ease-out);
+    animation-delay:2500ms, 4400ms;
+    animation-fill-mode:forwards, forwards;
+    filter:drop-shadow(0 0 12px var(--green-glow));
+  }
+  .wave path{
+    fill:none;stroke:var(--green);stroke-width:1.6;
+    stroke-linecap:round;stroke-linejoin:round;
+    stroke-dasharray:1200;stroke-dashoffset:1200;
+    animation:wave-draw 1.6s var(--ease-out) 2600ms forwards;
+  }
+  @keyframes wave-in{from{opacity:0;transform:translate(-50%,-50%) scaleX(.4)}to{opacity:1;transform:translate(-50%,-50%) scaleX(1)}}
+  @keyframes wave-out{to{opacity:0}}
+  @keyframes wave-draw{to{stroke-dashoffset:0}}
+
+  .wordmark{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    font-family:var(--sans);font-weight:800;
+    font-size:clamp(48px, 9.2vw, 148px);
+    letter-spacing:.32em;
+    color:var(--fg);
+    text-indent:.32em;
+    z-index:25;
+    opacity:0;
+    animation-name:word-in, word-out;
+    animation-duration:.7s, .5s;
+    animation-timing-function:var(--ease-out), var(--ease-out);
+    animation-delay:4300ms, 9700ms;
+    animation-fill-mode:forwards, forwards;
+    white-space:nowrap;
+  }
+  @keyframes word-in{
+    from{opacity:0;letter-spacing:.6em;filter:blur(6px)}
+    to{opacity:1;letter-spacing:.32em;filter:blur(0)}
+  }
+  @keyframes word-out{to{opacity:0;transform:translate(-50%,-50%) scale(.92);filter:blur(4px)}}
+
+  /* Ghosted glass side panels (Beat 2 → 3) */
+  .side-panel{
+    position:absolute;top:12%;bottom:12%;width:22%;
+    background:var(--surface);
+    border:1px solid var(--border);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border-radius:12px;
+    padding:22px 20px;
+    display:flex;flex-direction:column;gap:14px;
+    z-index:15;
+  }
+  .side-l{left:3.5%;opacity:0;transform:translateX(-40px);
+    animation-name:panel-in-l, panel-out;
+    animation-duration:.8s, .5s;
+    animation-timing-function:var(--ease-out), var(--ease-out);
+    animation-delay:4600ms, 9900ms;
+    animation-fill-mode:forwards, forwards;}
+  .side-r{right:3.5%;opacity:0;transform:translateX(40px);
+    animation-name:panel-in-r, panel-out;
+    animation-duration:.8s, .5s;
+    animation-timing-function:var(--ease-out), var(--ease-out);
+    animation-delay:4600ms, 9900ms;
+    animation-fill-mode:forwards, forwards;}
+  @keyframes panel-in-l{to{opacity:1;transform:translateX(0)}}
+  @keyframes panel-in-r{to{opacity:1;transform:translateX(0)}}
+  @keyframes panel-out{to{opacity:0;filter:blur(6px)}}
+  .ghost{
+    height:10px;border-radius:3px;
+    background:linear-gradient(90deg, rgba(255,255,255,.14), rgba(255,255,255,.04));
+    filter:blur(2px);
+  }
+  .ghost.s{width:60%}
+  .ghost.m{width:85%}
+  .ghost.l{width:100%}
+  .side-panel .label{
+    font-family:var(--mono);font-size:10px;color:var(--green);
+    letter-spacing:.14em;text-transform:uppercase;margin-bottom:6px;
+  }
+
+  /* ── BEAT 3: three flash cards ────────────────── */
+  .cards{
+    position:absolute;inset:0;z-index:30;pointer-events:none;
+  }
+  .card{
+    position:absolute;left:50%;top:50%;
+    transform:translate(-50%,-50%) translateY(20px) scale(.94);
+    width:min(46%, 620px);
+    background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:26px 28px;
+    backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+    box-shadow:0 20px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06);
+    opacity:0;
+  }
+  .card .eyebrow{
+    font-family:var(--mono);font-size:10px;color:var(--muted);
+    letter-spacing:.18em;text-transform:uppercase;margin-bottom:10px;
+  }
+  .card h3{
+    font-family:var(--sans);font-weight:700;font-size:clamp(18px,2.1vw,28px);
+    line-height:1.25;color:var(--fg);letter-spacing:-.01em;
+    text-wrap:balance;
+  }
+
+  /* Card 1 — Top Story + score */
+  .c1{
+    animation-name:card-in, card-out;
+    animation-duration:.55s, .35s;
+    animation-timing-function:var(--ease-spring), var(--ease-smooth);
+    animation-delay:10000ms, 10800ms;
+    animation-fill-mode:forwards, forwards;
+  }
+  .c1 .row{display:flex;align-items:center;justify-content:space-between;gap:22px;margin-top:16px}
+  .badge-score{
+    position:relative;width:64px;height:64px;flex:0 0 64px;
+    display:grid;place-items:center;
+    border-radius:50%;
+    background:radial-gradient(circle at center, rgba(34,197,142,.18), transparent 70%);
+    box-shadow:inset 0 0 0 1.5px var(--green), 0 0 24px var(--green-glow);
+  }
+  .badge-score .n{
+    font-family:var(--mono);font-weight:700;font-size:22px;color:var(--green);
+    font-variant-numeric:tabular-nums;
+  }
+  .badge-score .u{
+    position:absolute;bottom:-16px;left:50%;transform:translateX(-50%);
+    font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.15em;
+  }
+
+  /* Card 2 — Ask Signal chat */
+  .c2{
+    animation-name:card-in, card-out;
+    animation-duration:.55s, .35s;
+    animation-timing-function:var(--ease-spring), var(--ease-smooth);
+    animation-delay:10800ms, 11600ms;
+    animation-fill-mode:forwards, forwards;
+  }
+  .bubble{
+    margin-top:14px;
+    background:rgba(34,197,142,.08);
+    border:1px solid rgba(34,197,142,.18);
+    border-radius:12px 12px 12px 4px;
+    padding:14px 16px;
+    font-family:var(--sans);font-size:15px;color:var(--fg);line-height:1.5;
+    max-width:92%;
+  }
+  .bubble .caret{
+    display:inline-block;width:8px;height:1.05em;background:var(--green);
+    vertical-align:-2px;margin-left:2px;
+    animation:blink 1s steps(2) infinite;
+  }
+  @keyframes blink{50%{opacity:0}}
+
+  /* Card 3 — Advisor carousel + amber pulse */
+  .c3{
+    animation-name:card-in, card-out;
+    animation-duration:.55s, .35s;
+    animation-timing-function:var(--ease-spring), var(--ease-smooth);
+    animation-delay:11600ms, 12400ms;
+    animation-fill-mode:forwards, forwards;
+  }
+  .c3 .row{display:flex;align-items:center;gap:14px;margin-top:14px}
+  .chip{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:6px 10px;border-radius:999px;
+    background:rgba(245,179,56,.1);
+    border:1px solid rgba(245,179,56,.28);
+    font-family:var(--mono);font-size:10px;letter-spacing:.14em;
+    color:var(--amber);text-transform:uppercase;
+  }
+  .chip .pulse{
+    width:6px;height:6px;border-radius:50%;background:var(--amber);
+    box-shadow:0 0 8px rgba(245,179,56,.6);
+    animation:pulse-a 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse-a{50%{opacity:.4;transform:scale(.85)}}
+  .thumbs{display:flex;gap:8px;margin-left:auto}
+  .thumb{width:44px;height:32px;border-radius:6px;background:linear-gradient(135deg,#1a1e1c,#0d100e);border:1px solid var(--border)}
+  .thumb.hi{background:linear-gradient(135deg,#0f2a20,#0a1a14);border-color:rgba(34,197,142,.35)}
+
+  @keyframes card-in{
+    from{opacity:0;transform:translate(-50%,-50%) translateY(20px) scale(.94);filter:blur(4px)}
+    to{opacity:1;transform:translate(-50%,-50%) translateY(0) scale(1);filter:blur(0)}
+  }
+  @keyframes card-out{
+    to{opacity:0;transform:translate(-50%,-50%) scale(.85) translateY(-4px);filter:blur(4px)}
+  }
+
+  /* ── BEAT 4: orb collapse ─────────────────────── */
+  .orb{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(0);
+    width:220px;height:220px;border-radius:50%;
+    background:radial-gradient(circle at 40% 40%, #7effd4 0%, var(--green) 30%, var(--green-soft) 55%, transparent 75%);
+    box-shadow:0 0 80px var(--green-glow), 0 0 200px rgba(34,197,142,.25);
+    z-index:28;opacity:0;
+    animation-name:orb-in, orb-pulse, orb-out;
+    animation-duration:.6s, 1s, .5s;
+    animation-timing-function:var(--ease-out), var(--ease-out), var(--ease-out);
+    animation-delay:12500ms, 13100ms, 13400ms;
+    animation-fill-mode:forwards, forwards, forwards;
+  }
+  @keyframes orb-in{
+    from{opacity:0;transform:translate(-50%,-50%) scale(0)}
+    to{opacity:1;transform:translate(-50%,-50%) scale(.32)}
+  }
+  @keyframes orb-pulse{
+    0%{transform:translate(-50%,-50%) scale(.32)}
+    40%{transform:translate(-50%,-50%) scale(.5)}
+    100%{transform:translate(-50%,-50%) scale(.28)}
+  }
+  @keyframes orb-out{to{opacity:0;transform:translate(-50%,-50%) scale(2.4);filter:blur(24px)}}
+
+  /* ── BEAT 5: logo lockup ──────────────────────── */
+  .lockup{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    text-align:center;z-index:35;
+    opacity:0;
+    animation:lockup-in .6s var(--ease-out) 13600ms forwards;
+  }
+  @keyframes lockup-in{from{opacity:0;transform:translate(-50%,-50%) translateY(8px)}to{opacity:1;transform:translate(-50%,-50%) translateY(0)}}
+  .lockup .mark{
+    font-family:var(--sans);font-weight:800;
+    font-size:clamp(42px,7.2vw,108px);letter-spacing:.28em;text-indent:.28em;
+    color:var(--fg);
+  }
+  .lockup .rule{
+    display:block;height:1.5px;margin:22px auto 18px;width:0;
+    background:linear-gradient(90deg, transparent, var(--green) 20%, var(--green) 80%, transparent);
+    box-shadow:0 0 12px var(--green-glow);
+    animation:rule-draw .9s var(--ease-out) 13900ms forwards;
+  }
+  @keyframes rule-draw{to{width:min(46%, 520px)}}
+  .lockup .tag{
+    font-family:var(--sans);font-weight:500;
+    font-size:clamp(13px,1.35vw,18px);
+    color:var(--muted);letter-spacing:.28em;text-transform:uppercase;text-indent:.28em;
+    opacity:0;
+    animation:tag-in .6s var(--ease-out) 14300ms forwards;
+  }
+  @keyframes tag-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+  .lockup .url{
+    display:block;margin-top:18px;
+    font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.24em;
+    opacity:0;
+    animation:tag-in .6s var(--ease-out) 14600ms forwards;
+  }
+
+  /* Replay control */
+  .replay{
+    position:absolute;bottom:20px;right:22px;z-index:70;
+    background:var(--surface-hi);color:var(--fg);
+    border:1px solid var(--border);
+    padding:8px 14px;border-radius:999px;
+    font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    cursor:pointer;opacity:0;transition:opacity .3s, background .2s;
+  }
+  .replay.show{opacity:1}
+  .replay:hover{background:rgba(255,255,255,.1)}
+  .replay:focus-visible{outline:1.5px solid var(--green);outline-offset:2px}
+
+  @media (prefers-reduced-motion:reduce){
+    /* Static poster fallback (skipped if html has .force-motion) */
+    html:not(.force-motion) .ping-wrap,
+    html:not(.force-motion) .wave,
+    html:not(.force-motion) .wordmark,
+    html:not(.force-motion) .side-panel,
+    html:not(.force-motion) .cards,
+    html:not(.force-motion) .orb,
+    html:not(.force-motion) .grain{display:none !important}
+    html:not(.force-motion) .lockup{opacity:1 !important;animation:none !important}
+    html:not(.force-motion) .lockup .rule{width:min(46%,520px) !important;animation:none !important}
+    html:not(.force-motion) .lockup .tag,
+    html:not(.force-motion) .lockup .url{opacity:1 !important;animation:none !important}
+  }
+</style>
+
+<div class="stage" id="stage">
+  <div class="vignette"></div>
+  <div class="grain"></div>
+
+  <div class="hud">
+    <div class="row"><span class="dot"></span><span>SIGNAL·LIVE</span><span class="k">//</span><span id="ts">00:00:00</span></div>
+  </div>
+  <div class="hud-r">
+    <div>MKT·INTEL <span style="color:var(--dim)">/</span> v2.4</div>
+  </div>
+
+  <!-- Beat 1: ping -->
+  <div class="ping-wrap">
+    <div class="ping-ring"></div>
+    <div class="ping-ring d"></div>
+    <div class="ping-core"></div>
+  </div>
+
+  <!-- Beat 2: waveform + wordmark + side panels -->
+  <svg class="wave" viewBox="0 0 600 80" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M0,40 L60,40 L80,20 L100,60 L120,10 L140,70 L160,30 L180,50 L200,40 L240,40 L260,25 L280,55 L300,15 L320,65 L340,35 L360,45 L400,40 L440,40 L460,28 L480,52 L500,40 L600,40"/>
+  </svg>
+  <div class="wordmark">SIGNAL</div>
+
+  <aside class="side-panel side-l">
+    <div class="label">Feed · 03</div>
+    <div class="ghost l"></div>
+    <div class="ghost m"></div>
+    <div class="ghost s"></div>
+    <div class="ghost l" style="margin-top:12px"></div>
+    <div class="ghost m"></div>
+  </aside>
+  <aside class="side-panel side-r">
+    <div class="label" style="color:var(--amber)">Pulse</div>
+    <div class="ghost m"></div>
+    <div class="ghost l"></div>
+    <div class="ghost s"></div>
+    <div class="ghost l" style="margin-top:12px"></div>
+    <div class="ghost m"></div>
+  </aside>
+
+  <!-- Beat 3: three cards -->
+  <div class="cards">
+    <article class="card c1">
+      <div class="eyebrow">Top Story · 14:32 UTC</div>
+      <div class="row">
+        <h3>Anthropic's next model rewrites the enterprise pricing floor.</h3>
+        <div class="badge-score">
+          <span class="n" id="score">0</span>
+          <span class="u">IMPACT</span>
+        </div>
+      </div>
+    </article>
+
+    <article class="card c2">
+      <div class="eyebrow">Ask Signal</div>
+      <h3 style="font-weight:600;font-size:clamp(14px,1.4vw,18px);color:var(--muted)">What changed for margins this week?</h3>
+      <div class="bubble">
+        Compute costs down 18%; three vendors cut list pricing<span class="caret"></span>
+      </div>
+    </article>
+
+    <article class="card c3">
+      <div class="eyebrow">AI Pulse · Advisor</div>
+      <h3>Semis rotate on TSMC guidance beat.</h3>
+      <div class="row">
+        <span class="chip"><span class="pulse"></span>Signal Alert</span>
+        <div class="thumbs">
+          <div class="thumb"></div>
+          <div class="thumb hi"></div>
+          <div class="thumb"></div>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <!-- Beat 4: orb -->
+  <div class="orb"></div>
+
+  <!-- Beat 5: lockup -->
+  <div class="lockup">
+    <div class="mark">SIGNAL</div>
+    <span class="rule"></span>
+    <div class="tag">Intelligence. Distilled.</div>
+    <div class="url">signal.ai</div>
+  </div>
+
+  <button class="replay" id="replay" type="button">Replay</button>
+</div>
+
+<script>
+  (function(){
+    function fmtTs(ms){
+      const t = Math.floor(ms);
+      const h = String(Math.floor(t/3600000)%24).padStart(2,'0');
+      const m = String(Math.floor(t/60000)%60).padStart(2,'0');
+      const s = String(Math.floor(t/1000)%60).padStart(2,'0');
+      return `${h}:${m}:${s}`;
+    }
+
+    let rafId = null, countId = null, hideId = null;
+    let originalStageHTML = null;
+
+    function play(){
+      cancelAnimationFrame(rafId);
+      clearTimeout(countId); clearTimeout(hideId);
+
+      let stage = document.getElementById('stage');
+      if (originalStageHTML === null) {
+        originalStageHTML = stage.innerHTML;
+      } else {
+        // Full reset by re-parenting HTML — kills all running animations, restarts from delay 0
+        stage.innerHTML = originalStageHTML;
+      }
+
+      const scoreEl = document.getElementById('score');
+      const tsEl = document.getElementById('ts');
+      const replay = document.getElementById('replay');
+
+      replay.classList.remove('show');
+      replay.addEventListener('click', play);
+
+      // Timestamp ticker (fast-forward feel during opening beat)
+      const t0 = performance.now();
+      const tick = () => {
+        const ts = (performance.now() - t0) * 340;
+        tsEl.textContent = fmtTs(ts % 86400000);
+        rafId = requestAnimationFrame(tick);
+      };
+      tick();
+
+      // Score count-up during Card 1 window
+      countId = setTimeout(() => {
+        const target = 92;
+        const startCount = performance.now();
+        const step = () => {
+          const p = Math.min(1, (performance.now() - startCount) / 700);
+          const n = Math.floor(target * (1 - Math.pow(1 - p, 3)));
+          scoreEl.textContent = n;
+          if (p < 1) requestAnimationFrame(step);
+          else scoreEl.textContent = target;
+        };
+        step();
+      }, 10050);
+
+      // Freeze ticker + show replay after full timeline
+      hideId = setTimeout(() => {
+        cancelAnimationFrame(rafId);
+        replay.classList.add('show');
+      }, 15400);
+    }
+
+    // ?force=1 or ?force in URL bypasses the reduced-motion static fallback
+    if (/[?&]force(=1)?(&|$)/.test(location.search)) {
+      document.documentElement.classList.add('force-motion');
+    }
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', play);
+    } else {
+      play();
+    }
+  })();
+</script>

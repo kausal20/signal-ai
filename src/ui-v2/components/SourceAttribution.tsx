@@ -20,22 +20,11 @@ import { BrandLogo } from "../icons/BrandLogo";
 import type { SourceKey } from "../shared/types";
 
 // ── URL safety ──────────────────────────────────────────────────────────────
-export function isSafeUrl(url?: string | null): url is string {
-  if (!url || typeof url !== "string") return false;
-  try {
-    const u = new URL(url);
-    return u.protocol === "https:" || u.protocol === "http:";
-  } catch { return false; }
-}
-export function domainOf(url?: string | null): string {
-  if (!isSafeUrl(url)) return "";
-  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
-}
-/** Open the original article in a new tab, safely (no opener, no referrer). */
-export function openOriginal(url?: string | null) {
-  if (!isSafeUrl(url)) return;
-  window.open(url, "_blank", "noopener,noreferrer");
-}
+// Single source of truth lives in `@/lib/url`. Re-exported here so the many
+// existing `from "./SourceAttribution"` import sites keep working unchanged.
+export { isSafeUrl, domainOf, openOriginal, normalizeUrl, validateArticleUrl } from "@/lib/url";
+import { isSafeUrl, domainOf, openOriginal } from "@/lib/url";
+
 export function formatPubDate(iso?: string): string {
   if (!iso) return "";
   const t = new Date(iso).getTime();

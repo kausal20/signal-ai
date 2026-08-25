@@ -16,7 +16,7 @@
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronRight, Bookmark, ArrowRight, Clock } from "lucide-react";
-import { motion as fm, useReducedMotion, useScroll, useTransform, type Variants } from "framer-motion";
+import { motion as fm, useReducedMotion, useScroll, useTransform, LayoutGroup, type Variants } from "framer-motion";
 import { staggerContainer as container, motionTokens } from "../animations/motion";
 import { ScreenShell } from "../layouts/ScreenShell";
 import { BottomNav } from "../layouts/BottomNav";
@@ -318,13 +318,15 @@ export function HomePage({
         {latest.length > 0 && (
           <section aria-label="Latest stories">
             <SectionHeader title="Latest Stories" />
-            <fm.div variants={reduce ? undefined : container} {...anim} className="flex flex-col">
-              {latest.map((s) => (
-                <fm.div key={s.id} variants={reduce ? undefined : fadeUp}>
-                  <FeedCard signal={s} onOpen={onOpenSignal} onToggleSave={onToggleSave} onAsk={onAskSignal} />
-                </fm.div>
-              ))}
-            </fm.div>
+            <LayoutGroup id="home-latest-stories">
+              <fm.div variants={reduce ? undefined : container} {...anim} className="flex flex-col gap-4">
+                {latest.map((s) => (
+                  <fm.div key={s.id} layout="position" variants={reduce ? undefined : fadeUp}>
+                    <FeedCard signal={s} onOpen={onOpenSignal} onToggleSave={onToggleSave} onAsk={onAskSignal} />
+                  </fm.div>
+                ))}
+              </fm.div>
+            </LayoutGroup>
           </section>
         )}
 

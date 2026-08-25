@@ -10,10 +10,10 @@
 import { memo } from "react";
 import { AnimatePresence, motion as fm, useReducedMotion, type Variants } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { Bookmark, Share2, Clock, ArrowRight, Sparkles } from "lucide-react";
+import { Bookmark, Share2, Clock, ArrowRight, Sparkles, Ban } from "lucide-react";
 import { BrandLogo } from "../icons/BrandLogo";
 
-import { openOriginal } from "./SourceAttribution";
+import { openOriginal, isSafeUrl } from "./SourceAttribution";
 import { eventBadge } from "../shared/eventType";
 import { useArticleSummary } from "@/hooks/useArticleSummary";
 import type { Signal } from "../shared/types";
@@ -181,16 +181,27 @@ function TopStoryCardImpl({ signal, onOpen, onToggleSave, onShare, className = "
 
 
           <fm.div variants={reduce ? undefined : item} className="mt-auto flex items-stretch gap-2.5 pt-6">
-            <fm.button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); openOriginal(signal.url); }}
-              whileHover={reduce ? undefined : { scale: 1.02 }}
-              whileTap={reduce ? undefined : { scale: 0.97 }}
-              transition={{ type: "spring", stiffness: 360, damping: 22 }}
-              className="inline-flex h-12 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-green px-4 text-[14.5px] font-bold text-black shadow-[0_6px_22px_hsl(152_72%_48%/0.28)] transition-colors hover:bg-green/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0d0a]"
-            >
-              Read Story <ArrowRight className="h-4 w-4 stroke-[2.5]" />
-            </fm.button>
+            {isSafeUrl(signal.url) ? (
+              <fm.button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); openOriginal(signal.url); }}
+                whileHover={reduce ? undefined : { scale: 1.02 }}
+                whileTap={reduce ? undefined : { scale: 0.97 }}
+                transition={{ type: "spring", stiffness: 360, damping: 22 }}
+                className="inline-flex h-12 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-green px-4 text-[14.5px] font-bold text-black shadow-[0_6px_22px_hsl(152_72%_48%/0.28)] transition-colors hover:bg-green/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0d0a]"
+              >
+                Read Story <ArrowRight className="h-4 w-4 stroke-[2.5]" />
+              </fm.button>
+            ) : (
+              // No real source URL → a clear, non-interactive state instead of a
+              // green button that silently does nothing on tap.
+              <span
+                aria-disabled="true"
+                className="inline-flex h-12 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-white/[0.08] bg-white/[0.02] px-4 text-[13.5px] font-semibold text-muted-foreground/60"
+              >
+                <Ban className="h-4 w-4" /> Original source unavailable
+              </span>
+            )}
             {/* Signal has ONE Ask Signal screen — the overlay in Advisor. This
                 navigates there with the article context (openAsk + article), so
                 the user enters that SAME experience from a different entry point.

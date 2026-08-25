@@ -128,7 +128,9 @@ Deno.serve(async (req) => {
         tag: "news",
         url: a.original_url || a.url,
         impact: q >= 80 ? "critical" : "major",
-        source_label: a.publisher ?? "Signal archive",
+        // Real publisher when known; a clean user-facing "Signal" (never an
+        // internal identifier) when this row genuinely has no publisher.
+        source_label: a.publisher ?? "Signal",
         source_count: 1,
         published_at: a.published_at ?? new Date().toISOString(),
         ranking_reason: a.is_official_source ? "Official company source" : "High-quality archive signal",

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { normalizeUrl } from "@/lib/url";
 import type { FeedItem } from "@/data/feed";
 
 interface DbRow {
@@ -48,7 +49,8 @@ function rowToItem(r: DbRow): FeedItem & { publishedAt: string; fetchedAt: strin
     title: r.title,
     summary: r.summary,
     whyItMatters: r.why_it_matters ?? "",
-    url: r.url,
+    // Normalized at the boundary → invalid/redirect URLs become "" (no button).
+    url: normalizeUrl(r.url) ?? "",
     tag: r.tag as FeedItem["tag"],
     source: r.source as FeedItem["source"],
     sourceLabel: r.source_label ?? sourceNameFromQuality(r.source_quality),

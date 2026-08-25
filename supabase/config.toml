@@ -1,5 +1,8 @@
 project_id = "ywsnuijybcbxylgsjvqi"
 
+[functions.entity-registry]
+verify_jwt = true
+
 [functions.fetch-feed]
 verify_jwt = true
 

@@ -28,6 +28,40 @@ interface SearchRpcRow extends SearchCandidate {
   event_type?: string;
 }
 
+interface ResolvedEntityRow {
+  r_entity_id: string; r_canonical_name: string; r_official_domain: string | null;
+  r_logo_url: string | null; r_confidence: number;
+}
+
+/**
+ * When a keyword resolves to a known entity with its own domain but the
+ * archive has no article from that domain (yet), synthesize a real,
+ * clickable "visit the source" card instead of a dead end. Never replaces a
+ * genuine article — only fills the gap when nothing on that domain exists.
+ */
+function domainCard(r: ResolvedEntityRow): SearchRpcRow {
+  const domain = r.r_official_domain!;
+  return {
+    id: `domain:${domain}`,
+    title: `${r.r_canonical_name} — official site`,
+    summary: `No archived articles from ${domain} yet. Visit the source directly.`,
+    source: r.r_canonical_name,
+    source_label: r.r_canonical_name,
+    publisher: r.r_canonical_name,
+    publisher_domain: domain,
+    url: `https://${domain}`,
+    original_url: `https://${domain}`,
+    content_type: "website",
+    section: "official",
+    is_official_source: true,
+    is_official_company_news: false,
+    source_type: "OFFICIAL_BLOG",
+    trust_score: 100,
+    score: 100,
+    rank: 1_000_000,
+  };
+}
+
 function logSearchTiers(q: string, rows: SearchRpcRow[]): void {
   const official = rows.filter((r) => r.section === "official" || r.is_official_source);
   const media = rows.filter((r) => r.section === "analysis" && !r.is_official_source);
@@ -118,7 +152,22 @@ Deno.serve(async (req) => {
       return await trendingFallback({ note: "search_rpc_error" });
     }
 
-    const rows = (data ?? []) as SearchRpcRow[];
+    let rows = (data ?? []) as SearchRpcRow[];
+
+    // Resolve the keyword to a known entity (Phase 2 Entity Resolution Engine —
+    // typo-tolerant, confidence-scored). If it names a real entity with its own
+    // domain and the archive has NOTHING from that domain yet, surface a real,
+    // clickable "visit the source" card instead of a dead end or unrelated
+    // trending content. Confidence >=60 matches resolve_query's own floor.
+    const { data: resolvedRows } = await supabase.rpc("resolve_query", { q_raw: q, max_results: 1 });
+    const resolved = (Array.isArray(resolvedRows) ? resolvedRows[0] : null) as ResolvedEntityRow | null;
+    if (resolved && resolved.r_confidence >= 60 && resolved.r_official_domain) {
+      const hasDomainRow = rows.some((r) => r.publisher_domain === resolved.r_official_domain);
+      if (!hasDomainRow) {
+        rows = [domainCard(resolved), ...rows];
+        console.info("[search] Injected domain fallback card", { q, domain: resolved.r_official_domain, confidence: resolved.r_confidence });
+      }
+    }
 
     // No hits anywhere in the archive → still never empty: trending + suggestion.
     if (rows.length === 0) return await trendingFallback();

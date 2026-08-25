@@ -507,23 +507,42 @@ export function NewsIntelligenceSheet({ open, onClose, onRetry, status, data, er
                     <Section emoji="📰" title="Related Stories">
                       {(data?.related_stories?.length ?? 0) === 0 ? <CardSkeleton count={3} /> : (
                       <div className="flex flex-col gap-2">
-                        {data!.related_stories!.slice(0, 5).map((s, i) => (
-                          <fm.button
-                            key={i}
-                            type="button"
-                            variants={reduce ? undefined : rise}
-                            onClick={() => { if (isSafeUrl(s.url)) openOriginal(s.url); }}
-                            whileHover={reduce ? undefined : { y: -2, borderColor: "hsl(152 72% 48% / 0.3)" }}
-                            transition={{ type: "spring", stiffness: 320, damping: 24 }}
-                            className="flex items-start gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3 text-left"
-                          >
-                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] text-[11px]">📄</span>
-                            <div className="min-w-0 flex-1">
-                              <p className="line-clamp-2 text-[13px] font-medium leading-snug text-foreground/90">{s.title}</p>
-                              {s.publisher && <p className="mt-1 text-[11px] text-muted-foreground">{s.publisher}</p>}
-                            </div>
-                          </fm.button>
-                        ))}
+                        {data!.related_stories!.slice(0, 5).map((s, i) => {
+                          const safe = isSafeUrl(s.url);
+                          const inner = (
+                            <>
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] text-[11px]">📄</span>
+                              <div className="min-w-0 flex-1">
+                                <p className="line-clamp-2 text-[13px] font-medium leading-snug text-foreground/90">{s.title}</p>
+                                {s.publisher && <p className="mt-1 text-[11px] text-muted-foreground">{s.publisher}</p>}
+                                {!safe && <p className="mt-1 text-[10.5px] font-medium text-muted-foreground/50">Original source unavailable</p>}
+                              </div>
+                            </>
+                          );
+                          // Clickable only when there's a real article URL; otherwise a
+                          // static row — never a row that silently fails on tap.
+                          return safe ? (
+                            <fm.button
+                              key={i}
+                              type="button"
+                              variants={reduce ? undefined : rise}
+                              onClick={() => openOriginal(s.url)}
+                              whileHover={reduce ? undefined : { y: -2, borderColor: "hsl(152 72% 48% / 0.3)" }}
+                              transition={{ type: "spring", stiffness: 320, damping: 24 }}
+                              className="flex items-start gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3 text-left"
+                            >
+                              {inner}
+                            </fm.button>
+                          ) : (
+                            <fm.div
+                              key={i}
+                              variants={reduce ? undefined : rise}
+                              className="flex items-start gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3 text-left opacity-70"
+                            >
+                              {inner}
+                            </fm.div>
+                          );
+                        })}
                       </div>
                       )}
                     </Section>

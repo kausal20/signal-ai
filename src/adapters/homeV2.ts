@@ -213,12 +213,19 @@ export function mapSignal(item: FeedItem, saved: boolean): Signal {
   const labelOfficial = /[[({]\s*official\s*[\])}]|\bofficial\b\s*$/i.test(rawLabel);
   const cleanLabel = rawLabel.replace(/\s*[[({]\s*official\s*[\])}]\s*$/i, "").replace(/\s+official\s*$/i, "").trim() || rawLabel;
   const takeaway = intel?.personalizedTakeaway ?? intel?.recommendationReason ?? item.whyItMatters ?? undefined;
-  // Signal AI insight = grounded "what matters" that already ships with the feed
-  // (pipeline editorial `why_it_matters` / cached opportunity intel). Prefetched,
-  // cached in feed_items — no second request, no placeholder, no hallucination.
-  const insight = cleanInsight(
-    intel?.opportunity?.explanation ?? item.whyItMatters ?? intel?.recommendationReason,
-  );
+  // Signal AI insight = grounded "what matters" for THIS article only.
+  // `item.whyItMatters` is the editorial pipeline's per-article field — the
+  // only source here guaranteed to be specific to this story.
+  // Deliberately EXCLUDED: `intel?.opportunity?.explanation` — that comes from
+  // a rule-based catalog of ~8 fixed category strings (e.g. "Hand a repetitive
+  // process to an agent and reclaim hours.") picked by keyword match, not
+  // generated per article. Any story matching the same keyword regex gets the
+  // exact same sentence, which is what caused the repeated-teaser bug. Also
+  // excluded: `intel?.recommendationReason` — for archive-supplement cards
+  // it's one of two fixed strings ("Official company source" / "High-quality
+  // archive signal"), same problem. No article-specific insight → no teaser,
+  // never a fabricated generic one (FeedCard already hides it when undefined).
+  const insight = cleanInsight(item.whyItMatters);
   return {
     id: item.id,
     title: item.title,

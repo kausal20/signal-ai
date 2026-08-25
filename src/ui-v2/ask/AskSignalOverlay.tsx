@@ -1,16 +1,18 @@
 // signal-ui-v2 · ask/AskSignalOverlay.tsx
 // ---------------------------------------------------------------------------
-// The Ask Signal experience — a full-screen overlay portaled into the
-// PhoneFrame's overlay root (outside the clipping scroll container), so it
-// fills the entire phone viewport. Slides up from the bottom with a spring
-// animation, hosts the AI Intelligence Assistant: empty state, prompt cards,
-// premium composer, streaming chat, thinking indicator, and follow-ups.
-// Presentation-only; talks to the ask-signal function via useAskSignal.
+// The Ask Signal experience — a bottom-sheet overlay portaled into the
+// PhoneFrame's overlay root (outside the clipping scroll container). Rises
+// from the bottom as its own layer, leaving Home visible (scaled down,
+// dimmed) above and behind it — an Apple Maps / Apple Music "Now Playing"
+// style entry, not a full-screen page replace. Hosts the AI Intelligence
+// Assistant: empty state, prompt cards, premium composer, streaming chat,
+// thinking indicator, and follow-ups. Presentation-only; talks to the
+// ask-signal function via useAskSignal.
 // ---------------------------------------------------------------------------
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  AnimatePresence, motion as fm, useMotionValue, useReducedMotion, type Variants,
+  animate, AnimatePresence, LayoutGroup, motion as fm, useMotionValue, useReducedMotion, type Variants,
 } from "framer-motion";
 import {
   Brain, X, Plus, ArrowUp, Square, Paperclip, Mic, ArrowDown,
@@ -20,10 +22,15 @@ import { useAskSignal, type AskMessage } from "@/hooks/useAskSignal";
 import type { ArticleContext } from "@/lib/askSignal";
 import { Markdown } from "./Markdown";
 
-// Bottom-sheet slide (up on open, down on close). Firm enough to feel snappy,
-// damped enough that it settles without bouncing.
-const ENTRY = { type: "spring" as const, stiffness: 300, damping: 32, mass: 0.9 };
+// Bottom-sheet slide (up on open, down on close) — tween, not spring: no
+// bounce, no overshoot, so it reads as a deliberate premium workspace entry.
 const EASE = [0.22, 1, 0.36, 1] as const;
+const OPEN_MS = 0.35;
+const CLOSE_MS = 0.3;
+const HOME_SCALE = 0.985;
+const HOME_DIM = 0.18;
+const SWIPE_DISMISS_PX = 120;
+const SWIPE_DISMISS_VELOCITY = 800;
 
 const SUGGESTIONS = [
   { icon: Sparkles, label: "Explain GPT-5.5", q: "Explain GPT-5.5" },
@@ -82,9 +89,9 @@ function SuggestionCard({ icon: Icon, label, onClick, reduce, delay }: {
       onClick={onClick}
       onMouseMove={onMove}
       onMouseLeave={reset}
-      initial={reduce ? undefined : { opacity: 0, y: 14 }}
+      initial={reduce ? undefined : { opacity: 0, y: 12 }}
       animate={reduce ? undefined : { opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: EASE, delay }}
+      transition={{ duration: 0.22, ease: EASE, delay }}
       style={{ x, y }}
       whileHover={reduce ? undefined : { scale: 1.03, borderColor: "hsl(152 72% 48% / 0.35)" }}
       whileTap={reduce ? undefined : { scale: 0.97 }}
@@ -212,14 +219,37 @@ export function AskSignalOverlay({ onClose, context }: Props) {
   const [atBottom, setAtBottom] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
   const empty = messages.length === 0;
   const name = useMemo(userName, []);
 
-  // Escape to close + lock background scroll while the assistant is mounted, so
-  // the Home page behind cannot move under the full-screen workspace.
+  // Scales + un-dims the Home layer behind the sheet. Called explicitly from
+  // every close path (not a cleanup fn) so it runs in lockstep with the sheet's
+  // own close animation rather than only after AnimatePresence fully unmounts.
+  const restoreHome = useCallback(() => {
+    const el = document.getElementById("app-content-root");
+    if (el && !reduce) animate(el, { scale: 1 }, { duration: CLOSE_MS, ease: EASE });
+  }, [reduce]);
+  const handleClose = useCallback(() => { restoreHome(); onClose(); }, [restoreHome, onClose]);
+
+  // Scale + dim Home the instant the overlay mounts (in lockstep with the sheet
+  // rising). Safety-net cleanup resets the transform immediately on unmount in
+  // case some path removed the overlay without going through handleClose.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const el = document.getElementById("app-content-root");
+    if (el) {
+      el.style.transformOrigin = "top center";
+      if (!reduce) animate(el, { scale: HOME_SCALE }, { duration: OPEN_MS, ease: EASE });
+    }
+    return () => { if (el) el.style.transform = ""; };
+  }, [reduce]);
+
+  // Escape to close + lock background scroll while the assistant is mounted, so
+  // the Home page behind cannot move under the sheet.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") handleClose(); };
     window.addEventListener("keydown", onKey);
+    sheetRef.current?.focus({ preventScroll: true });
     const scrollEl = document.querySelector<HTMLElement>("[data-home-scroll]");
     const prevHomeOverflow = scrollEl?.style.overflow;
     const prevBodyOverflow = document.body.style.overflow;
@@ -233,7 +263,7 @@ export function AskSignalOverlay({ onClose, context }: Props) {
       document.body.style.overflow = prevBodyOverflow;
       document.documentElement.style.overflow = prevHtmlOverflow;
     };
-  }, [onClose]);
+  }, [handleClose]);
 
   // Always start at the top when the overlay opens or article context changes.
   // Skip while the user has an active chat so mid-conversation scroll is preserved.
@@ -287,47 +317,60 @@ export function AskSignalOverlay({ onClose, context }: Props) {
   const portalTarget = document.getElementById("signal-overlay-root");
 
   const overlay = (
-    <>
-      {/* Backdrop — fully opaque once settled so the Home page is completely
-          hidden. The fade-in (opacity 0→1) briefly reveals Home during the
-          transition, then covers it entirely. */}
+    <LayoutGroup id="ask-signal-overlay">
+      {/* Backdrop — a light 18% scrim, not an opaque cover: Home stays visible
+          (dimmed + scaled) beneath the sheet the whole time it's open, like an
+          Apple Maps / Apple Music bottom sheet. */}
       <fm.div
         aria-hidden
-        initial={reduce ? { opacity: 1 } : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.24, ease: EASE }}
+        initial={reduce ? { opacity: HOME_DIM } : { opacity: 0 }}
+        animate={{ opacity: HOME_DIM, transition: { duration: OPEN_MS, ease: EASE } }}
+        exit={{ opacity: 0, transition: { duration: CLOSE_MS, ease: EASE } }}
         className="absolute inset-0 z-[94] bg-black"
       />
       <fm.div
-        // Full-screen motion: rises from the bottom on open, drops back down on
-        // close. Uses `y` so Framer animates via CSS transform only.
-        initial={reduce ? false : { y: "100%" }}
-        animate={reduce ? undefined : { y: "0%" }}
-        exit={reduce ? { opacity: 0 } : { y: "100%" }}
-        transition={reduce ? { duration: 0.2 } : ENTRY}
+        ref={sheetRef}
+        tabIndex={-1}
+        // Rises from the bottom as a card, not a full-screen replace — a `top`
+        // inset leaves a peek strip so Home is visibly present above the sheet.
+        // Tween only (no spring): a deliberate, non-bouncy premium entrance.
+        initial={reduce ? false : { y: "100%", opacity: 0.98 }}
+        animate={reduce ? undefined : { y: 0, opacity: 1, transition: { duration: OPEN_MS, ease: EASE } }}
+        exit={reduce ? { opacity: 0 } : { y: "100%", transition: { duration: CLOSE_MS, ease: EASE } }}
+        drag={reduce ? false : "y"}
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={{ top: 0, bottom: 0.6 }}
+        onDragEnd={(_, info) => {
+          if (info.offset.y > SWIPE_DISMISS_PX || info.velocity.y > SWIPE_DISMISS_VELOCITY) handleClose();
+        }}
         role="dialog"
         aria-modal="true"
         aria-label="Signal AI"
-        className="absolute inset-0 z-[95] flex flex-col overflow-hidden bg-[#040604] text-foreground will-change-transform"
-        style={{
-          // Respect the safe area at the top (iOS notch / status bar).
-          paddingTop: "env(safe-area-inset-top)",
-        }}
+        className="absolute inset-x-0 bottom-0 top-14 z-[95] flex flex-col overflow-hidden rounded-t-[28px] border-t border-white/[0.08] bg-[#040604] text-foreground shadow-[0_-30px_80px_hsl(0_0%_0%/0.7)] outline-none will-change-transform"
       >
       <BackgroundMesh reduce={!!reduce} />
 
-      {/* Grab handle — mobile sheet cue */}
-      <div aria-hidden className="relative z-10 flex shrink-0 justify-center pt-2 pb-1">
+      {/* Grab handle — draggable sheet cue */}
+      <div aria-hidden className="relative z-10 flex shrink-0 cursor-grab justify-center pt-2 pb-1 active:cursor-grabbing">
         <span className="h-[5px] w-10 rounded-full bg-white/20" />
       </div>
 
-      {/* HEADER — glass, shrinks on scroll. paddingTop is a plain style value so
-          the animation can freely control it without React duplicate-prop conflicts. */}
+      {/* HEADER — glass, shrinks on scroll; fades/slides in 100ms after the
+          sheet begins rising. paddingTop is a plain style value so the scroll
+          animation can freely control it without React duplicate-prop conflicts. */}
       <fm.header
         className="relative z-10 flex items-center gap-3 border-b border-white/[0.06] bg-[linear-gradient(to_bottom,rgba(4,6,4,0.9),rgba(4,6,4,0.6))] px-4 backdrop-blur-xl sm:px-5"
-        animate={{ paddingTop: scrolled ? 10 : 16, paddingBottom: scrolled ? 12 : 16 }}
-        transition={{ duration: 0.25, ease: EASE }}
+        initial={reduce ? undefined : { opacity: 0, y: -10 }}
+        animate={{
+          opacity: 1, y: 0,
+          paddingTop: scrolled ? 10 : 16, paddingBottom: scrolled ? 12 : 16,
+        }}
+        transition={{
+          opacity: { duration: 0.22, ease: EASE, delay: reduce ? 0 : 0.1 },
+          y: { duration: 0.22, ease: EASE, delay: reduce ? 0 : 0.1 },
+          paddingTop: { duration: 0.25 },
+          paddingBottom: { duration: 0.25 },
+        }}
       >
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-green/25 bg-green/[0.10] text-green shadow-[0_0_16px_hsl(152_72%_48%/0.2)]">
           <Brain className="h-[18px] w-[18px]" />
@@ -346,7 +389,7 @@ export function AskSignalOverlay({ onClose, context }: Props) {
           </AnimatePresence>
         </div>
 
-        <fm.button type="button" onClick={onClose} aria-label="Close Signal AI"
+        <fm.button type="button" onClick={handleClose} aria-label="Close Signal AI"
           whileHover={reduce ? undefined : { scale: 1.06 }} whileTap={reduce ? undefined : { scale: 0.92 }}
           className="flex h-9 w-9 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.04] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green">
           <X className="h-4 w-4" />
@@ -417,7 +460,7 @@ export function AskSignalOverlay({ onClose, context }: Props) {
                       {ctx.headline}
                     </h3>
                     <p className="mt-1.5 text-[11.5px] text-muted-foreground">
-                      {ctx.publisher ?? "Signal archive"}
+                      {ctx.publisher ?? "Signal"}
                       {ctx.source_type ? ` · ${ctx.source_type.replace(/_/g, " ").toLowerCase()}` : ""}
                     </p>
                   </div>
@@ -427,20 +470,25 @@ export function AskSignalOverlay({ onClose, context }: Props) {
               <div className="mt-7 grid w-full grid-cols-1 gap-2.5">
                 {ctx
                   ? contextQuestions(ctx).map((q, i) => (
-                      <SuggestionCard key={q} icon={Sparkles} label={q} reduce={!!reduce} delay={0.16 + i * 0.04} onClick={() => submit(q)} />
+                      <SuggestionCard key={q} icon={Sparkles} label={q} reduce={!!reduce} delay={0.18 + i * 0.05} onClick={() => submit(q)} />
                     ))
                   : SUGGESTIONS.map((s, i) => (
-                      <SuggestionCard key={s.label} icon={s.icon} label={s.label} reduce={!!reduce} delay={0.12 + i * 0.05} onClick={() => submit(s.q)} />
+                      <SuggestionCard key={s.label} icon={s.icon} label={s.label} reduce={!!reduce} delay={0.18 + i * 0.05} onClick={() => submit(s.q)} />
                     ))}
               </div>
             </div>
           ) : (
-            <div className="flex flex-col gap-4 py-5">
+            <fm.div
+              className="flex flex-col gap-4 py-5"
+              initial={reduce ? undefined : "hidden"}
+              animate={reduce ? undefined : "show"}
+              variants={reduce ? undefined : { hidden: {}, show: { transition: { staggerChildren: 0.05, delayChildren: 0.18 } } }}
+            >
               <AnimatePresence initial={false}>
                 {messages.map((m) => <MessageBubble key={m.id} m={m} onAsk={submit} reduce={!!reduce} />)}
               </AnimatePresence>
               {status === "thinking" && <ThinkingIndicator />}
-            </div>
+            </fm.div>
           )}
         </div>
       </div>
@@ -461,8 +509,18 @@ export function AskSignalOverlay({ onClose, context }: Props) {
       <div className="relative z-10 border-t border-white/[0.06] bg-[linear-gradient(to_top,rgba(4,6,4,0.95),rgba(4,6,4,0.7))] px-4 pb-[max(14px,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl">
         <div className="w-full">
           <fm.div
-            animate={reduce ? undefined : { borderColor: focused ? "hsl(152 72% 48% / 0.55)" : "hsl(0 0% 100% / 0.08)", boxShadow: focused ? "0 0 0 3px hsl(152 72% 48% / 0.08), 0 8px 30px hsl(152 72% 48% / 0.10)" : "0 8px 24px hsl(0 0% 0% / 0.35)" }}
-            transition={{ duration: 0.2 }}
+            initial={reduce ? undefined : { opacity: 0, scale: 0.98 }}
+            animate={reduce ? undefined : {
+              opacity: 1, scale: 1,
+              borderColor: focused ? "hsl(152 72% 48% / 0.55)" : "hsl(0 0% 100% / 0.08)",
+              boxShadow: focused ? "0 0 0 3px hsl(152 72% 48% / 0.08), 0 8px 30px hsl(152 72% 48% / 0.10)" : "0 8px 24px hsl(0 0% 0% / 0.35)",
+            }}
+            transition={{
+              opacity: { duration: 0.22, ease: EASE, delay: 0.14 },
+              scale: { duration: 0.22, ease: EASE, delay: 0.14 },
+              borderColor: { duration: 0.2 },
+              boxShadow: { duration: 0.2 },
+            }}
             className="flex items-end gap-2 rounded-[32px] border bg-white/[0.03] p-2 pl-3.5 backdrop-blur-xl"
           >
 
@@ -497,7 +555,7 @@ export function AskSignalOverlay({ onClose, context }: Props) {
         </div>
       </div>
     </fm.div>
-    </>
+    </LayoutGroup>
   );
 
   // If the portal target exists (PhoneFrame is mounted), render there so we

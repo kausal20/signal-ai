@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { normalizeUrl } from "@/lib/url";
 import type { FeedItem } from "@/data/feed";
 
 interface ArchiveRow {
@@ -39,9 +40,11 @@ function toFeedItem(r: ArchiveRow): FeedItem {
     what_happened: r.summary ?? "",
     who_for: "",
     opportunity: "",
-    url: (r.original_url || r.url) ?? "#",
+    url: normalizeUrl(r.original_url || r.url) ?? "",
     tag: "news",
-    source: r.publisher ?? r.source ?? "Signal archive",
+    // "blog" defers to sourceLabel/brand detection (see homeV2.ts
+    // sourceIdentityFor) instead of leaking an internal fallback string.
+    source: r.publisher ?? r.source ?? "blog",
     sourceLabel: r.publisher ?? undefined,
     category: (r.event_type as any) ?? "news",
     content_category: "Must Know",

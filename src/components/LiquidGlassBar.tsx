@@ -44,8 +44,13 @@ interface LiquidGlassBarProps {
   className?: string;
 }
 
+const EASE = [0.22, 1, 0.36, 1] as const;
+
 // ── Spring configs (Apple-spec precision) ────────────────────────────────
 // Core capsule spring: responsive, snappy, no lag — the signature feel.
+// Kept for the velocity pipeline (stretch/squash/skew below) — that liquid
+// warp is driven continuously off this spring's velocity regardless of what
+// transition the capsule's own position glide uses.
 const CAPSULE_SPRING = {
   type: "spring" as const,
   mass: 0.5,
@@ -54,13 +59,20 @@ const CAPSULE_SPRING = {
   restDelta: 0.001,
 };
 
-// Icon spring: lighter mass for instant response.
+// Capsule position glide: the shared-layout move between tabs. Tween, not
+// spring — deliberate duration/ease so it reads as a smooth glide, never a
+// jump or a bounce.
+const GLIDE_TWEEN = { duration: 0.45, ease: EASE };
+
+// Icon spring: lighter mass for instant response. Small delay so the capsule
+// visibly leads and the icon follows — indicator first, then icon.
 const ICON_SPRING = {
   type: "spring" as const,
   mass: 0.4,
   stiffness: 400,
   damping: 26,
   restDelta: 0.001,
+  delay: 0.05,
 };
 
 // Label spring: minimal mass for fluid feel.
@@ -177,8 +189,8 @@ const TabButton = memo(function TabButton({
           reduced
             ? undefined
             : {
-                y: isActive ? -2 : 0,
-                scale: isActive ? 1.08 : 1,
+                y: isActive ? -4 : 0,
+                scale: isActive ? 1.12 : 1,
                 opacity: isActive ? 1 : 0.65,
               }
         }
@@ -346,7 +358,7 @@ export function LiquidGlassBar({ tabs, activeKey, onSelect, className }: LiquidG
                 top: "6px",
                 bottom: "6px",
               }}
-              transition={reduceMotion ? { duration: 0 } : CAPSULE_SPRING}
+              transition={reduceMotion ? { duration: 0 } : GLIDE_TWEEN}
             >
               <motion.span
                 className="liquid-glass-pill absolute inset-x-[4px] inset-y-0"

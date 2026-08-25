@@ -3,10 +3,31 @@
 
 import type { RawItem, StoryCluster, SignalItem, EditorialAudit } from "./types.ts";
 import { sourceUrlsFor } from "./cluster.ts";
+import { normalizeUrl } from "./url.ts";
 import { dbWrite } from "./reliability.ts";
 import { classifyContentType } from "./content_type.ts";
 import { classifyEditorial, isOfficialCompanyNewsForArchive } from "./editorial.ts";
 import { classifySourceType } from "./source_type.ts";
+
+// Best openable public URL for a feed item: the normalized primary link, else
+// the first normalizable entry in source_urls (recovers items whose primary is
+// a google-news redirect but a clean corroborating link exists), else null.
+function bestPublicUrl(primary?: string | null, sourceUrls?: unknown): string | null {
+  const first = normalizeUrl(primary);
+  if (first) return first;
+  if (Array.isArray(sourceUrls)) {
+    for (const s of sourceUrls) {
+      const candidate = typeof s === "string"
+        ? s
+        : (s && typeof s === "object" && "url" in (s as Record<string, unknown>))
+          ? String((s as Record<string, unknown>).url)
+          : null;
+      const n = normalizeUrl(candidate);
+      if (n) return n;
+    }
+  }
+  return null;
+}
 
 const MAX_CONSECUTIVE_FAILURES = 3;
 // Exponential disable window per failure streak, capped (Phase 11 self-healing).
@@ -45,18 +66,24 @@ export async function storeRawItems(sb: any, rawItems: RawItem[], rejected: RawI
 export async function archiveAcceptedItems(sb: any, accepted: RawItem[]): Promise<void> {
   if (!accepted || accepted.length === 0) return;
   const rows = accepted.map((i) => {
-    const contentType = classifyContentType({ title: i.rawTitle, url: i.originalUrl ?? i.url, source: i.source, summary: i.rawText });
+    // The real, openable article URL — decoded publisher link preferred, raw
+    // link as fallback. Normalized to the shared canonical form (or null when
+    // it's a google-redirect / CDN shell / malformed / empty). Never store a
+    // "#", empty string, or redirect URL. `url` and `original_url` are nullable.
+    const publicUrl = normalizeUrl(i.originalUrl ?? i.url);
+    const rawForClassify = i.originalUrl ?? i.url; // classifiers can use the raw hint
+    const contentType = classifyContentType({ title: i.rawTitle, url: rawForClassify, source: i.source, summary: i.rawText });
     const editorial = classifyEditorial({ title: i.rawTitle, summary: i.rawText, contentType });
     // Source tier from the connector kind + publisher domain (entity-match
     // refinement happens later in the entity processor). Official vs media.
     const srcClass = classifySourceType({
-      publisher: i.publisher, publisherDomain: i.publisherDomain, url: i.originalUrl ?? i.url,
+      publisher: i.publisher, publisherDomain: i.publisherDomain, url: rawForClassify,
       connectorSource: i.source, connectorKind: i.sourceKind,
     });
     return {
       id: i.id,
-      url: i.url,
-      canonical_url: i.canonicalUrl,
+      url: publicUrl,
+      canonical_url: normalizeUrl(i.canonicalUrl),
       title: i.rawTitle,
       summary: (i.rawText ?? "").slice(0, 500),
       full_content: i.rawText ?? null,
@@ -65,7 +92,7 @@ export async function archiveAcceptedItems(sb: any, accepted: RawItem[]): Promis
       // Publisher (real site) + real article URL, distinct from the connector.
       publisher: i.publisher ?? null,
       publisher_domain: i.publisherDomain ?? null,
-      original_url: i.originalUrl ?? i.url,
+      original_url: publicUrl,
       // Content type + editorial judgement (drives entity-search sections).
       content_type: contentType,
       event_type: editorial.eventType,
@@ -96,7 +123,7 @@ export async function storeClusters(sb: any, clusters: StoryCluster[], items: Si
     return {
       id: c.id,
       canonical_title: item?.title ?? c.primary.rawTitle,
-      canonical_url: c.primary.canonicalUrl,
+      canonical_url: normalizeUrl(c.primary.canonicalUrl),
       content_category: item?.content_category ?? null,
       source_count: c.members.length,
       confidence_score: item?.confidence_score ?? Math.min(100, 45 + c.members.length * 8),
@@ -145,7 +172,8 @@ export async function upsertFeedItems(sb: any, dailyFeed: SignalItem[], fetchedA
     what_happened: i.what_happened,
     opportunity: i.opportunity,
     who_for: i.who_for,
-    url: i.url,
+    // Normalized, openable article URL (or null → frontend hides the button).
+    url: bestPublicUrl(i.url, i.source_urls),
     tag: i.tag,
     source: i.source,
     source_label: i.source_label,

@@ -339,6 +339,7 @@ const Index = () => {
     };
 
     return (
+      <PullToRefresh onRefresh={backendSearch.refresh} scrollSelector="[data-search-scroll]">
       <SearchPage
         query={query}
         onQueryChange={setQuery}
@@ -368,6 +369,7 @@ const Index = () => {
         onOpenSignal={(id) => track("opened", { feed_item_id: id })}
         onToggleSave={toggleBookmark}
       />
+      </PullToRefresh>
     );
   }
 
@@ -397,6 +399,7 @@ const Index = () => {
     };
 
     return (
+      <PullToRefresh onRefresh={refresh} scrollSelector="[data-saved-scroll]">
       <SavedPage
         items={visible.map((i) => mapSignal(i, true))}
         tabs={savedTabs}
@@ -408,6 +411,7 @@ const Index = () => {
         onToggleSave={toggleBookmark}
         onBrowse={goHome}
       />
+      </PullToRefresh>
     );
   }
 

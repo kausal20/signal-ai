@@ -60,7 +60,7 @@ export function SavedPage({
   );
 
   return (
-    <ScreenShell header={header} footer={<BottomNav active="saved" bookmarkCount={bookmarkCount ?? items.length} onNavigate={onNavigate} />} bodyClassName="px-[22px] pb-28 pt-1">
+    <ScreenShell header={header} footer={<BottomNav active="saved" bookmarkCount={bookmarkCount ?? items.length} onNavigate={onNavigate} />} bodyClassName="px-[22px] pb-28 pt-1" data-saved-scroll>
       {tabs.length > 0 && (
         <div className="no-scrollbar -mx-[22px] mb-4 flex gap-2 overflow-x-auto px-[22px]">
           {tabs.map((t) => {
