@@ -19,11 +19,7 @@ import { loadClusterProfiles, loadUserCluster, assignCluster, collaborativeRelev
 import { loadGlobalInfluence, globalMultiplier } from "../_shared/global_graph.ts";
 import { applyStrategist } from "../_shared/strategist.ts";
 import type { StoredStory } from "../_shared/intelligence_engine.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeadersFor, verifyOrigin, checkRateLimit } from "../_shared/security.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -54,8 +50,20 @@ const STORY_COLS =
   "id,title,summary,what_happened,why_it_matters,who_for,opportunity,action,risk,who_benefits,expected_impact,time_horizon,content_category,category,tag,url,impact,source_label,source_count,published_at,ranking_reason,trend_entities,score,novelty_score,business_impact_score,builder_value_score,adoption_potential_score,market_impact_score,confidence_score,opportunity_score,corroboration_score,leverage_score,trend_score,momentum_score";
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  if (!verifyOrigin(req)) {
+    return new Response(JSON.stringify({ error: "origin not allowed" }), { status: 403, headers: corsHeaders });
+  }
+
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+  // Called on every Home load, so this needs headroom above normal traffic —
+  // higher limit than the write endpoints, still bounded.
+  if (!(await checkRateLimit(sb, "personalize", req, 60, 60))) {
+    return new Response(JSON.stringify({ error: "rate limit exceeded" }), { status: 429, headers: corsHeaders });
+  }
 
   let body: any = {};
   if (req.method === "POST") { try { body = await req.json(); } catch { body = {}; } }
@@ -132,7 +140,11 @@ Deno.serve(async (req) => {
         // internal identifier) when this row genuinely has no publisher.
         source_label: a.publisher ?? "Signal",
         source_count: 1,
-        published_at: a.published_at ?? new Date().toISOString(),
+        // Real article timestamp only — never fabricate "now" for an article
+        // of unknown age (the query above filters published_at >= 21 days ago,
+        // so this is realistically always present; null is the honest fallback
+        // if it somehow isn't, NOT the current instant).
+        published_at: a.published_at ?? null,
         ranking_reason: a.is_official_source ? "Official company source" : "High-quality archive signal",
         trend_entities: [],
         score: q,
@@ -228,7 +240,7 @@ Deno.serve(async (req) => {
 
   // V4 CAP 1/2/3: vector similarity + collaborative cluster + global Bayesian
   // (storyVecs / globalStats / clusterProfiles / user embedding loaded above).
-  let userVec: number[] = ue0?.vec ?? [];
+  const userVec: number[] = ue0?.vec ?? [];
   let userCluster: { cluster_id: number; similarity: number } | null = userCluster0;
   if (!userCluster && userVec.length > 0) userCluster = assignCluster(userVec, clusterProfiles);
   const clusterProfile = userCluster ? clusterProfiles.find((c) => c.cluster_id === userCluster!.cluster_id) : undefined;

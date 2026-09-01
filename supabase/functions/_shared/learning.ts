@@ -479,13 +479,23 @@ export function personalizeCard(
     return (wb + ib) - (wa + ia);
   });
 
+  // `degraded` means the upstream LLM reasoning step didn't run for this story —
+  // `advice` (intel.personas[persona]) is then a cached fallback that, for older
+  // rows, was stamped from a keyword/persona template (fixed "${subject} could
+  // lower your operating cost..." style boilerplate, identical across every
+  // story with the same category+persona). That's fabricated, not genuine
+  // per-article analysis, so it must not be shown as "personalized_takeaway" —
+  // fall back to the real (cleaned) article text instead.
+  const cleanedWhyItMatters = (story.why_it_matters ?? "").replace(/\s*Opportunity:.*$/i, "").trim();
+  const groundedTakeaway = cleanedWhyItMatters || story.summary;
+
   return {
     id: story.id,
     headline: story.title,
     what_happened: u?.what_happened ?? story.summary,
-    why_it_matters: u?.what_changed ?? story.why_it_matters ?? story.summary,
+    why_it_matters: u?.what_changed ?? (cleanedWhyItMatters || story.summary),
     who_should_care: (u?.who_benefits ?? []).join(", ") || (story.who_for ?? "AI builders"),
-    personalized_takeaway: advice?.takeaway ?? story.summary,
+    personalized_takeaway: degraded ? groundedTakeaway : (advice?.takeaway ?? groundedTakeaway),
     personalized_why: advice?.why ?? "",
     opportunity: opps[0] ?? null,
     opportunities: opps,

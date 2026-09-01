@@ -5,11 +5,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { outcomeMass, recordBayes } from "../_shared/global_graph.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeadersFor, verifyOrigin, checkRateLimit } from "../_shared/security.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -42,8 +38,19 @@ function normalize(e: any, fallbackClient: string | null): OutEvent | null {
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return new Response("method not allowed", { status: 405, headers: corsHeaders });
+
+  if (!verifyOrigin(req)) {
+    return new Response(JSON.stringify({ error: "origin not allowed" }), { status: 403, headers: corsHeaders });
+  }
+
+  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+  if (!(await checkRateLimit(sb, "record-outcome", req, 100, 60))) {
+    return new Response(JSON.stringify({ error: "rate limit exceeded" }), { status: 429, headers: corsHeaders });
+  }
 
   const t0 = Date.now();
   let body: any;
@@ -51,11 +58,12 @@ Deno.serve(async (req) => {
   catch { return new Response(JSON.stringify({ error: "invalid json" }), { status: 400, headers: corsHeaders }); }
 
   const client_id = body.client_id ? String(body.client_id).slice(0, 80) : null;
+  if (!client_id) {
+    return new Response(JSON.stringify({ error: "client_id required" }), { status: 400, headers: corsHeaders });
+  }
   const raw: any[] = Array.isArray(body.events) ? body.events : [body];
   const events = raw.map((e) => normalize(e, client_id)).filter((e): e is OutEvent => e !== null).slice(0, 100);
   if (events.length === 0) return new Response(JSON.stringify({ error: "no valid events" }), { status: 400, headers: corsHeaders });
-
-  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   // 1. Durable success-event log (deduped by event_id).
   let stored = 0;

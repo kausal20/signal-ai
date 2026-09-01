@@ -20,7 +20,7 @@ export const SMALL_WRAPPER_RX = /\b(gpt wrapper|chatgpt wrapper|claude wrapper|a
 export const ACADEMIC_NO_USE_RX = /\b(survey|position paper|theoretical|formalism|lemma|theorem)\b/i;
 
 export const BANNED_HEADLINE_WORDS = /\b(revolutionary|game[- ]changing|seamless|supercharge|unlock|transform|next[- ]gen|cutting[- ]edge|world[- ]class|paradigm|disrupt|leverage|harness|empower|unprecedented|breakthrough(ly)?|insanely|crazy|wild|mind[- ]blowing|gamechanger)\b/i;
-export const BANNED_HEADLINE_LEAD = /^(how|why|the|a|an|introducing|announcing|meet|say hello)\b/i;
+export const BANNED_HEADLINE_LEAD = /^(how|why|the|a|an|introducing|announcing|meet|say hello|for example|for instance|previously|however|meanwhile|additionally|furthermore|therefore|in fact|this means|according to|as a result|in other words|similarly|specifically|notably|it also|it then|which means|that said)\b/i;
 export const VAGUE_AUDIENCE = /^(everyone|anyone|all (ai )?(builders?|users?|people)|people interested|tech enthusiasts?|the world|users|developers|builders|operators|founders|creators)$/i;
 export const WEAK_OPPORTUNITY = /^(consider|think about|explore|stay (ahead|tuned|informed)|learn (more|about)|read|check (it )?out|watch|see|note|keep an eye|be aware|understand|look into|investigate)\b/i;
 export const PURE_REPO_SLUG = /^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i;

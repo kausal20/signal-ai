@@ -207,7 +207,7 @@ function formatArticle(article: ArchiveArticle, index: number): string {
     `Summary: ${cleanText(article.summary, 900)}`,
     `Company/entities: ${(article.trend_entities ?? []).join(", ") || "Not tagged"}`,
     `Category: ${article.category ?? article.content_category ?? "Not classified"}`,
-    `Source: ${article.source_label ?? article.source ?? "Signal archive"}`,
+    `Source: ${article.source_label ?? article.source ?? "Signal"}`,
     `Published: ${article.published_at}`,
     `Signal Score: ${article.score}`,
     `URL: ${article.url}`,
@@ -254,7 +254,7 @@ export function relatedReading(articles: ArchiveArticle[]): string {
   const selected = articles.slice(0, 5);
   if (!selected.length) return "\n\n## Related Reading\n\nSignal's archive has no related articles yet.";
   return `\n\n## Related Reading\n\n${selected.map((article) => {
-    const source = article.source_label ?? article.source ?? "Signal archive";
+    const source = article.source_label ?? article.source ?? "Signal";
     return `- [${cleanText(article.title, 180)}](${article.url}) — ${source} · ${displayDate(article.published_at)} · Signal Score: ${article.score}`;
   }).join("\n")}`;
 }

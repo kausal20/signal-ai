@@ -198,7 +198,7 @@ export async function fetchWithFallback(
 export async function fetchReddit(): Promise<RawItem[]> {
   const subs = [
     "OpenAI", "ClaudeAI", "ChatGPT", "LocalLLaMA", "singularity", "ArtificialInteligence",
-    "AI_Agents", "MachineLearning", "artificial", "SaaS", "startups",
+    "AI_Agents", "MachineLearning", "artificial",
   ];
   const out: RawItem[] = [];
   await Promise.all(subs.map(async (sub) => {

@@ -66,7 +66,7 @@ async function assembleGrounding(article: ArticleInput): Promise<{ ctx: Groundin
     const related_stories: RelatedStory[] = others.slice(0, 5).map((r) => ({
       title: String(r.title ?? ""),
       url: String(r.original_url ?? r.url ?? ""),
-      publisher: String(r.publisher ?? r.source ?? "Signal archive"),
+      publisher: String(r.publisher ?? r.source ?? "Signal"),
       published_at: String(r.published_at ?? ""),
       source_type: String(r.source_type ?? ""),
     }));
@@ -88,19 +88,26 @@ Deno.serve(async (req) => {
   // Phased generation keeps the first useful content fast (core ≈2-3s).
   const phase: AnalysisPhase = payload.phase === "core" || payload.phase === "deep" ? payload.phase : "full";
 
+  // why_it_matters carries a fabricated ". Opportunity: <canned template>" clause
+  // appended by the editorial pipeline (a closed pool of ~10 sentences reused
+  // verbatim across unrelated articles — confirmed by DB audit). Strip it before
+  // it becomes prompt grounding text, so it can't leak into or bias the AI's
+  // generated analysis. Same pattern already used in _shared/intelligence_engine.ts.
+  const cleanWhyItMatters = (s?: string | null) => (s ?? "").replace(/\s*Opportunity:.*$/i, "").trim() || undefined;
+
   // Assemble article (client content first, feed_items fallback).
   let article: ArticleInput = {
     id: articleId,
     title: (payload.article?.title ?? "").toString(),
     summary: payload.article?.summary?.toString(),
-    why_it_matters: payload.article?.why_it_matters?.toString(),
+    why_it_matters: cleanWhyItMatters(payload.article?.why_it_matters?.toString()),
     source: payload.article?.source?.toString(),
     tag: payload.article?.tag?.toString(),
   };
   if (!article.title) {
     try {
       const { data } = await supabase.from("feed_items").select("title,summary,why_it_matters,tag").eq("id", articleId).maybeSingle();
-      if (data) article = { id: articleId, title: data.title, summary: data.summary, why_it_matters: data.why_it_matters, tag: data.tag };
+      if (data) article = { id: articleId, title: data.title, summary: data.summary, why_it_matters: cleanWhyItMatters(data.why_it_matters), tag: data.tag };
     } catch { /* ignore */ }
   }
   if (!article.title) return json({ ok: false, code: "no_article", error: "Article content unavailable." });

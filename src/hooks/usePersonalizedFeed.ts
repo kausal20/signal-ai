@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useLiveFeed } from "@/hooks/useLiveFeed";
 import { getClientId, getPersona } from "@/lib/clientId";
 import { normalizeUrl } from "@/lib/url";
+import { cleanWhyItMatters } from "@/lib/whyItMatters";
 import type { FeedItem, PersonalIntel } from "@/data/feed";
 
 interface PersonalizeCard {
@@ -33,6 +34,8 @@ interface PersonalizeCard {
   /** Real publisher when known (e.g. "TechCrunch"); backend falls back to a
    * clean "Signal" for genuine archive-only rows — never an internal key. */
   source_label?: string;
+  /** Real article publication timestamp from content_archive, when known. */
+  published_at?: string | null;
 }
 
 // Materialise a personalize card (which may be an archive-sourced supplement not
@@ -43,7 +46,7 @@ function cardToFeedItem(c: PersonalizeCard, intel?: PersonalIntel): FeedItem {
     id: c.id,
     title: c.headline ?? "Signal",
     summary: c.what_happened ?? "",
-    whyItMatters: c.why_it_matters ?? c.what_happened ?? "",
+    whyItMatters: cleanWhyItMatters(c.why_it_matters) || (c.what_happened ?? ""),
     what_happened: c.what_happened ?? "",
     who_for: "",
     opportunity: "",
@@ -62,8 +65,13 @@ function cardToFeedItem(c: PersonalizeCard, intel?: PersonalIntel): FeedItem {
     content_category: c.content_category ?? "Must Know",
     score,
     usefulness: score, vibe_friendly: true, humanized: false, engagement: 0,
-    published_at: new Date().toISOString(),
-    timestamp: new Date().toISOString(),
+    // Real publish timestamp when the backend knows it. Never fabricate "now"
+    // for an article of unknown age — that's fake recency (Phase 6). Empty
+    // string is this codebase's existing "unknown" convention: formatTimeAgo
+    // returns "" for it (see adapters/homeV2.ts), so the card simply shows no
+    // time rather than a false one.
+    published_at: c.published_at ?? "",
+    timestamp: c.published_at ?? "",
     impact: score >= 80 ? "critical" : "major",
     novelty_score: score, business_impact_score: score, builder_value_score: score,
     adoption_potential_score: score, market_impact_score: score, confidence_score: 70,

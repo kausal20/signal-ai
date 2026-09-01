@@ -81,7 +81,7 @@ function shape(text: string): string | null {
   const t = cleanText(text);
   if (t.length < 25) return null;
   const sents = t.split(/(?<=[.!?])\s+(?=[A-Z“"‘'(])/).map((s) => s.trim()).filter(Boolean);
-  let out: string[] = [];
+  const out: string[] = [];
   let words = 0;
   for (const s of sents.slice(0, 3)) {
     const w = s.split(/\s+/).length;

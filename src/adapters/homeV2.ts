@@ -212,7 +212,15 @@ export function mapSignal(item: FeedItem, saved: boolean): Signal {
   const rawLabel = sourceIdentity.label;
   const labelOfficial = /[[({]\s*official\s*[\])}]|\bofficial\b\s*$/i.test(rawLabel);
   const cleanLabel = rawLabel.replace(/\s*[[({]\s*official\s*[\])}]\s*$/i, "").replace(/\s+official\s*$/i, "").trim() || rawLabel;
-  const takeaway = intel?.personalizedTakeaway ?? intel?.recommendationReason ?? item.whyItMatters ?? undefined;
+  // Same rule as `insight` below: `intel?.recommendationReason` is a generic
+  // 2-value template for archive-supplement cards ("Official company source" /
+  // "High-quality archive signal", set in personalize/index.ts's archive
+  // branch, which never populates personalizedTakeaway) — real Today's Brief
+  // rail cards (HomePage.tsx) render this directly, so it must never be
+  // generic filler. `personalizedTakeaway` (from the real per-persona LLM
+  // pipeline) stays first when genuinely present; `whyItMatters` (real
+  // editorial text) is the honest fallback, never the generic template.
+  const takeaway = intel?.personalizedTakeaway ?? item.whyItMatters ?? undefined;
   // Signal AI insight = grounded "what matters" for THIS article only.
   // `item.whyItMatters` is the editorial pipeline's per-article field — the
   // only source here guaranteed to be specific to this story.

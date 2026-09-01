@@ -42,8 +42,8 @@ interface Props {
   hero?: Recommendation;    // opportunity — Advisor page only; not rendered here
   emptyLabel?: string;      // shown when nothing matches the active category
   brief: Signal[];          // swipeable rail
-  topSignals: Signal[];     // ranked stories (source of Top Story + Latest)
-  feed: Signal[];           // quiet cards (rest of Latest)
+  topSignals: Signal[];     // importance-ranked pool; only used as Top Story fallback
+  feed: Signal[];           // Latest Stories — already time-sorted + cross-section deduped
   categories?: CategoryTab[];
   activeCategory?: string;
   bookmarkCount?: number;
@@ -119,20 +119,21 @@ export function HomePage({
     [brief, topStory?.id],
   );
 
-  // ── LATEST STORIES — the main chronological feed. Deduped by id; the Top
-  // Story is removed so it never repeats at the very top. (Brief is a separate
-  // horizontal scan rail, so its highlights may still appear in the full feed.)
+  // ── LATEST STORIES — pure chronological feed, already deduped against Top
+  // Story / Today's Brief upstream (Index.tsx's `briefing.feed`). Do NOT merge
+  // `topSignals` back in here — they're importance-ranked, not time-ranked,
+  // and re-adding them breaks the chronological guarantee for this section.
   const latest = useMemo(() => {
     const seen = new Set<string>();
     if (topStory) seen.add(topStory.id);
     const out: Signal[] = [];
-    for (const s of [...topSignals, ...feed]) {
+    for (const s of feed) {
       if (seen.has(s.id)) continue;
       seen.add(s.id);
       out.push(s);
     }
     return out;
-  }, [topSignals, feed, topStory]);
+  }, [feed, topStory]);
 
   const nothingToShow = !topStory && briefCards.length === 0 && latest.length === 0;
 

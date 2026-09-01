@@ -4,11 +4,7 @@
 // telemetry to event_log. Fire-and-forget from the client; never blocks UI.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeadersFor, verifyOrigin, checkRateLimit } from "../_shared/security.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -60,8 +56,23 @@ function normalize(e: any): InEvent | null {
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return new Response("method not allowed", { status: 405, headers: corsHeaders });
+
+  // Origin check: blocks other sites from reading the response. It does not
+  // stop a script that sets its own Origin header — see _shared/security.ts.
+  if (!verifyOrigin(req)) {
+    return new Response(JSON.stringify({ error: "origin not allowed" }), { status: 403, headers: corsHeaders });
+  }
+
+  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+  // client_id stays optional here on purpose — session_start/session_end fire
+  // before onboarding assigns one. Rate limit by IP instead of by identity.
+  if (!(await checkRateLimit(sb, "record-signal", req, 100, 60))) {
+    return new Response(JSON.stringify({ error: "rate limit exceeded" }), { status: 429, headers: corsHeaders });
+  }
 
   const t0 = Date.now();
   let body: any;
@@ -74,8 +85,6 @@ Deno.serve(async (req) => {
   if (events.length === 0) {
     return new Response(JSON.stringify({ error: "no valid events" }), { status: 400, headers: corsHeaders });
   }
-
-  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   // 1. Batch insert raw signals — deduped by event_id (ON CONFLICT DO NOTHING).
   const rows = events.map((e) => ({

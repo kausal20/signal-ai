@@ -35,7 +35,7 @@ export function normalizeUrl(raw?: string | null): string | null {
   if (!raw || typeof raw !== "string") return null;
 
   // Trim + decode the one HTML entity feeds commonly leave in query strings.
-  let s = raw.trim().replace(/&amp;/g, "&");
+  const s = raw.trim().replace(/&amp;/g, "&");
   if (!s || s === "#") return null;
 
   let u: URL;
@@ -104,7 +104,7 @@ export function openOriginal(url?: string | null): boolean {
   const canonical = normalizeUrl(url);
   if (!canonical) {
     if (import.meta.env?.DEV) {
-      // eslint-disable-next-line no-console
+       
       console.warn("[Signal] openOriginal: no valid source URL — not opening", { url });
     }
     return false;

@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { sourceKeyFor, sourceLabelFor, formatTimeAgo } from "@/adapters/homeV2";
 import { normalizeUrl } from "@/lib/url";
+import { cleanWhyItMatters } from "@/lib/whyItMatters";
 import type { Signal } from "@/ui-v2/shared/types";
 
 interface SearchRow {
@@ -41,7 +42,7 @@ function rowToSignal(r: SearchRow): Signal {
     score: Math.round(r.score ?? 0),
     tag: r.tag as Signal["tag"],
     timeAgo: r.published_at ? formatTimeAgo(r.published_at) : undefined,
-    takeaway: r.why_it_matters || undefined,
+    takeaway: cleanWhyItMatters(r.why_it_matters) || undefined,
     url,
     domain: domain || undefined,
     publishedAt: r.published_at,

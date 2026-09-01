@@ -147,12 +147,19 @@ Deno.serve(async (req) => {
   }
   if (!row) return ok({ ok: false, error: "not_found" });
 
+  // why_it_matters carries a fabricated ". Opportunity: <canned template>" clause
+  // appended by the editorial pipeline (drawn from a closed pool of ~10 sentences
+  // reused verbatim across unrelated articles — confirmed by DB audit). Strip it
+  // before it becomes LLM/summary source text, same pattern already used in
+  // _shared/intelligence_engine.ts.
+  const whyItMatters = (row.why_it_matters ?? "").replace(/\s*Opportunity:.*$/i, "").trim();
+
   // NEVER include the title in the summary source — deterministic scoring
   // used to pick it back as a "high-overlap" sentence, producing summaries that
   // just echoed the headline. Only real body text goes in.
   const source = (row.full_content ?? "").length > 200
     ? row.full_content
-    : [row.what_happened, row.summary, row.why_it_matters].filter(Boolean).join("\n\n");
+    : [row.what_happened, row.summary, whyItMatters].filter(Boolean).join("\n\n");
   const hash = await contentHash(`${row.title}|${source.slice(0, 8000)}`);
   if (!refresh && row.ai_summary && row.ai_summary_hash === hash) {
     return ok({ ok: true, summary: row.ai_summary, cached: true, source: "cache", ms: Date.now() - t0 });

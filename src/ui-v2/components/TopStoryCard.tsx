@@ -65,7 +65,10 @@ function TopStoryCardImpl({ signal, onOpen, onToggleSave, onShare, className = "
   // excerpt if the summary hasn't been generated yet, so the card is never blank.
   const excerpt = signal.whatHappened || signal.takeaway;
   const { summary } = useArticleSummary(signal.aiSummary ? undefined : signal.id, excerpt);
-  const signalSummary = signal.aiSummary || summary || excerpt || "Key developments from today's top signal.";
+  // No generic fallback — a hardcoded "Key developments from today's top
+  // signal." reads as invented intelligence. Missing real content → the
+  // section is hidden below rather than showing filler (Rule: hide, don't fabricate).
+  const signalSummary = signal.aiSummary || summary || excerpt || undefined;
 
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -135,18 +138,22 @@ function TopStoryCardImpl({ signal, onOpen, onToggleSave, onShare, className = "
 
           {/* Signal Summary — AI briefing of the whole article (cache-first,
               backed by the article-summary edge fn). Max 4 lines per spec. */}
-          <fm.span
-            variants={reduce ? undefined : item}
-            className="mt-3.5 font-mono-tight text-[9.5px] font-bold uppercase tracking-[0.10em] text-green"
-          >
-            Signal Summary
-          </fm.span>
-          <fm.p
-            variants={reduce ? undefined : item}
-            className="mt-1.5 max-w-[54ch] text-[15px] leading-relaxed text-white/70 line-clamp-4 sm:text-[15.5px]"
-          >
-            {signalSummary}
-          </fm.p>
+          {signalSummary && (
+            <>
+              <fm.span
+                variants={reduce ? undefined : item}
+                className="mt-3.5 font-mono-tight text-[9.5px] font-bold uppercase tracking-[0.10em] text-green"
+              >
+                Signal Summary
+              </fm.span>
+              <fm.p
+                variants={reduce ? undefined : item}
+                className="mt-1.5 max-w-[54ch] text-[15px] leading-relaxed text-white/70 line-clamp-4 sm:text-[15.5px]"
+              >
+                {signalSummary}
+              </fm.p>
+            </>
+          )}
           {signal.takeaway && (signal.whatHappened && signal.takeaway !== signal.whatHappened) && (
             <fm.div variants={reduce ? undefined : item} className="mt-2.5 flex gap-2">
               <span className="mt-0.5 shrink-0 font-mono-tight text-[9.5px] font-bold uppercase tracking-[0.10em] text-green">Why</span>

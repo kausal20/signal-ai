@@ -37,7 +37,7 @@ interface Props {
 // conducted tests...", "The company announced...") without saying what was
 // found/changed. Matched only to SKIP to the next sentence already present in
 // the source text — never used to invent or alter content.
-const VAGUE_OPENER = /^(researchers?|scientists?|the (company|team|study|report|paper)|analysts?|experts?|a new study)\b[\s\S]{0,60}?\b(conducted|examined|looked at|announced|studied|investigated|explored|discussed|reported on|tested|compared|is looking|are looking)\b/i;
+const VAGUE_OPENER = /^(researchers?|scientists?|officials?|the (company|team|study|report|paper)|analysts?|experts?|a new study)\b[\s\S]{0,60}?\b(conducted|examined|looked at|announced|studied|investigated|explored|discussed|reported on|tested|compared|is looking|are looking|said|stated|noted)\b/i;
 
 function splitSentences(text: string): string[] {
   return text.split(/(?<=[.!?])\s+(?=[A-Z"'(])/).filter(Boolean);

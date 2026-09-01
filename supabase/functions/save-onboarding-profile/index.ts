@@ -1,9 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeadersFor, verifyOrigin, checkRateLimit } from "../_shared/security.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -86,13 +82,6 @@ function cleanString(value: unknown, max = 120): string {
   return String(value ?? "").trim().slice(0, max);
 }
 
-function bad(message: string, status = 400): Response {
-  return new Response(JSON.stringify({ ok: false, error: message }), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
 function inferPersona(role: string, goal: string): string {
   return GOAL_PERSONA[goal] ?? ROLE_PERSONA[role] ?? "builder";
 }
@@ -125,8 +114,19 @@ function interestWeights(interests: string[], goal: string): Record<string, numb
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req);
+  const bad = (message: string, status = 400): Response =>
+    new Response(JSON.stringify({ ok: false, error: message }), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return bad("method not allowed", 405);
+
+  if (!verifyOrigin(req)) return bad("origin not allowed", 403);
+
+  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  if (!(await checkRateLimit(sb, "save-onboarding-profile", req, 20, 60))) {
+    return bad("rate limit exceeded", 429);
+  }
 
   let body: any = {};
   try { body = await req.json(); }
@@ -159,8 +159,6 @@ Deno.serve(async (req) => {
     experience_level: experienceLevel,
     onboarding_completed_at: now,
   };
-
-  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   // Identity spine: user_profiles.client_id → clients(client_id) FK. The client
   // row MUST exist before the profile upsert or the whole write is rejected.

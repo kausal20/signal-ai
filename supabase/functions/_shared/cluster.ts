@@ -112,7 +112,7 @@ export function sourceUrlsFor(cluster: StoryCluster): Array<{ label: string; url
 // over real content instead of one-line RSS snippets.
 // -------------------------------------------------------------------------
 export function extractArticleText(html: string): string {
-  let s = html
+  const s = html
     .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
     .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
     .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, " ")

@@ -32,6 +32,7 @@ import {
   mapSignal, mapRecommendation, mapProject, mapTrending, mapCollections, mapSources,
   SAVED_COLLECTIONS, classifySaved,
 } from "@/adapters/homeV2";
+import { selectTopStories, selectTodaysBrief, selectLatestStories, dedupeKey, keysOf } from "@/adapters/homeSections";
 
 // P1 migration flag — new ui-v2 Home. Old Home stays in this file until verified.
 const USE_V2_HOME = true;
@@ -140,33 +141,59 @@ const Index = () => {
     return withProgressiveFreshness(base, activeTab as HomeCategoryId).items;
   }, [query, isSavedSection, bookmarks, FEED, activeTab, activeSection]);
 
-  // Derive the briefing hierarchy (hero / chips / top-3 / feed / missed) for the
-  // Home "all" tab. Deduped: a story shown above never repeats in the feed.
+  // Derive the three Home sections — genuinely different selection logic per
+  // section (see adapters/homeSections.ts for why the old positional-slice
+  // approach made Top Stories / Today's Brief / Latest Stories feel like
+  // copies of the same list). Deduped: a story surfaced in an earlier section
+  // is excluded from later ones, except where a story legitimately belongs in
+  // both Top Stories and Today's Brief (both are importance-driven).
   const briefing = useMemo(() => {
-    const ranked = filtered; // already score-filtered + personalized order
+    const ranked = filtered;
     if (activeSection !== "home" || activeTab !== "all" || ranked.length === 0) {
       return { hero: null as typeof ranked[number] | null, chips: [] as typeof ranked, top3: [] as typeof ranked, feed: ranked, missed: [] as typeof ranked };
     }
+
+    // TOP STORIES — "what matters most". Advisor's own best-opportunity pick
+    // (a real backend personalization signal) wins the hero slot when present;
+    // otherwise the highest composite-importance story does. Supporting slots
+    // fill from the same importance ranking, source-diversity capped.
     const heroById = advisor?.best_opportunity_today?.id
       ? ranked.find((i) => i.id === advisor.best_opportunity_today!.id)
       : null;
-    const hero = heroById ?? ranked.find((i) => i.intel?.opportunity) ?? ranked[0];
-    const rest = ranked.filter((i) => i.id !== hero.id);
-    const top3 = rest.slice(0, 3);
-    const shown = new Set<string>([hero.id, ...top3.map((i) => i.id)]);
+    const topPool = selectTopStories(ranked, 5);
+    const hero = heroById ?? topPool.hero ?? ranked[0];
+    const heroKey = dedupeKey(hero);
+    const top3 = [topPool.hero, ...topPool.supporting]
+      .filter((i): i is typeof ranked[number] => !!i && dedupeKey(i) !== heroKey)
+      .slice(0, 4);
+    // Cross-section exclusion uses dedupeKey (url-based), not raw id — a real
+    // duplicate found live: the same AWS Lambda launch existed as two separate
+    // feed_items rows and appeared as both the Top Story hero AND a Latest
+    // Stories card. Id-only exclusion can't catch that; url can.
+    const topKeys = keysOf([hero, ...top3]);
 
-    // Missed: important, 1–3 days old, never saved, not already shown.
+    // TODAY'S BRIEF — "what do I need to understand today". Importance-ranked
+    // among stories with REAL why-it-matters content only; mostly distinct
+    // from Top Stories, only overlapping when nothing else qualifies.
+    const chips = selectTodaysBrief(ranked, topKeys, 5);
+    const briefKeys = keysOf(chips);
+
+    // Missed: important, 1–3 days old, never saved, not already surfaced above.
     const now = Date.now();
     const missed = FEED.filter((i) => {
-      if (shown.has(i.id) || bookmarks.includes(i.id)) return false;
+      const key = dedupeKey(i);
+      if (topKeys.has(key) || briefKeys.has(key) || bookmarks.includes(i.id)) return false;
       if (i.impact !== "critical" && i.impact !== "major") return false;
       const age = (now - new Date(i.timestamp).getTime()) / 3_600_000;
       return age >= 24 && age <= 72;
     }).slice(0, 3);
-    const missedIds = new Set(missed.map((i) => i.id));
+    const missedKeys = keysOf(missed);
 
-    const feed = rest.filter((i) => !shown.has(i.id) && !missedIds.has(i.id));
-    const chips = ranked.slice(0, 5);
+    // LATEST STORIES — "what's new right now". Pure reverse-chronological by
+    // real publish timestamp, excluding whatever's already shown above.
+    const excludeFromLatest = new Set<string>([...topKeys, ...briefKeys, ...missedKeys]);
+    const feed = selectLatestStories(ranked, excludeFromLatest);
+
     return { hero, chips, top3, feed, missed };
   }, [filtered, activeSection, activeTab, advisor, FEED, bookmarks]);
 
