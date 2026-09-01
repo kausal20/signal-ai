@@ -283,6 +283,33 @@ const Index = () => {
     return <HomePageSkeleton />;
   }
 
+  // The fetch itself failed (network/RLS/etc) — say so, don't call it "empty".
+  if (USE_V2_HOME && activeSection === "home" && !status.loading && FEED.length === 0 && status.error) {
+    return (
+      <div className="py-24 text-center animate-fade-up">
+        <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
+          <Inbox className="w-6 h-6 text-muted-foreground" />
+        </div>
+        <h3 className="text-base font-semibold mb-2">Something went wrong</h3>
+        <p className="text-sm text-muted-foreground max-w-xs mx-auto">Couldn't load the feed, please try again.</p>
+      </div>
+    );
+  }
+
+  // Archive genuinely empty (cron ingestion hasn't populated it yet, or is
+  // between runs) — never trigger ingestion from the client, just say so.
+  if (USE_V2_HOME && activeSection === "home" && !status.loading && FEED.length === 0 && !status.error) {
+    return (
+      <div className="py-24 text-center animate-fade-up">
+        <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
+          <Inbox className="w-6 h-6 text-muted-foreground" />
+        </div>
+        <h3 className="text-base font-semibold mb-2">Content updating</h3>
+        <p className="text-sm text-muted-foreground max-w-xs mx-auto">Check back soon — new signals land on a regular schedule.</p>
+      </div>
+    );
+  }
+
   if (
     USE_V2_HOME &&
     activeSection === "home" &&

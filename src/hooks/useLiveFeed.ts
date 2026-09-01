@@ -71,9 +71,6 @@ function rowToItem(r: DbRow): FeedItem & { publishedAt: string; fetchedAt: strin
   };
 }
 
-// Module-level guard: only auto-trigger ingestion once per browser session.
-let _autoIngestTriggered = false;
-
 // ── Stale-while-revalidate feed cache ───────────────────────────────────────
 // Memory + localStorage so reopening Home paints INSTANTLY from the last feed,
 // then revalidates in the background. Kills the "blank Home → sections pop in"
@@ -129,6 +126,13 @@ export function useLiveFeed() {
     const mapped = (data ?? []).map(rowToItem);
     setItems(mapped);
     writeFeedCache(mapped, mapped[0]?.fetchedAt ?? null);
+    // Archive health check only — ingestion is cron-driven server-side
+    // (20260722130000_ingestion_cron.sql). The frontend reads feed_items and
+    // never triggers ingestion itself, including under a thin/empty archive.
+    const count = mapped.length;
+    if (count < 100) {
+      console.warn("[Signal feed] Archive has only", count, "articles — search quality will be degraded.");
+    }
     setStatus((s) => ({
       ...s,
       loading: false,
@@ -136,46 +140,6 @@ export function useLiveFeed() {
       lastFetchAt: mapped[0]?.fetchedAt ?? s.lastFetchAt,
       error: null,
     }));
-
-    // ── Archive health check & auto-ingestion ────────────────────────────
-    const count = mapped.length;
-    if (count < 100) {
-      console.warn("[Signal feed] Archive has only", count, "articles — search quality will be degraded.");
-    }
-    if (count < 20 && !_autoIngestTriggered) {
-      _autoIngestTriggered = true;
-      console.info("[Signal feed] Archive nearly empty (", count, "items). Auto-triggering ingestion pipeline...");
-      supabase.functions.invoke("fetch-feed", { body: {} }).then(
-        (res) => {
-          if (res.error) {
-            console.warn("[Signal feed] Auto-ingestion failed:", res.error);
-          } else {
-            console.info("[Signal feed] Auto-ingestion triggered successfully. Reloading feed...");
-            // Reload the feed after ingestion completes (give it a moment)
-            setTimeout(() => {
-              supabase
-                .from("feed_items")
-                .select("*")
-                .order("published_at", { ascending: false })
-                .limit(200)
-                .then(({ data: freshData }) => {
-                  if (freshData && freshData.length > 0) {
-                    const freshMapped = freshData.map(rowToItem);
-                    setItems(freshMapped);
-                    setStatus((s) => ({
-                      ...s,
-                      itemCount: freshMapped.length,
-                      lastFetchAt: freshMapped[0]?.fetchedAt ?? s.lastFetchAt,
-                    }));
-                    console.info("[Signal feed] Feed reloaded after ingestion:", freshMapped.length, "articles");
-                  }
-                });
-            }, 8000); // Wait 8s for ingestion pipeline to finish
-          }
-        },
-        (err) => console.warn("[Signal feed] Auto-ingestion request failed:", err),
-      );
-    }
   }, []);
 
   const refresh = useCallback(async () => {
