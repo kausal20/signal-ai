@@ -21,23 +21,23 @@ export function OptionCard({ option, selected, onSelect }: CardProps) {
       onClick={onSelect}
       className={cn(
         "flex min-h-[100px] flex-col justify-between rounded-[18px] border p-[15px] text-left transition-all active:scale-95",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ed-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ed-bg",
         selected
-          ? "border-green/[0.45] bg-green/[0.08] shadow-[0_0_24px_hsl(152_72%_48%/0.12)]"
-          : "border-white/[0.06] bg-white/[0.035]"
+          ? "border-ed-accent bg-ed-accent-soft "
+          : "border-ed-border-strong bg-ed-surface"
       )}
     >
       {Icon && (
         <span
           className={cn(
             "mb-3 flex h-[38px] w-[38px] items-center justify-center rounded-xl border",
-            selected ? "border-green/[0.35] bg-green/[0.16] text-green" : "border-white/[0.08] bg-white/[0.035] text-green/70"
+            selected ? "border-ed-accent bg-ed-accent-soft text-ed-accent-ink" : "border-ed-border-strong bg-ed-surface text-ed-accent-ink"
           )}
         >
           <Icon className="h-5 w-5" />
         </span>
       )}
-      <span className={cn("text-[12.5px] font-semibold leading-tight", selected ? "text-foreground" : "text-foreground/70")}>
+      <span className={cn("text-[12.5px] font-semibold leading-tight", selected ? "text-ed-text" : "text-ed-text")}>
         {option.label}
       </span>
     </button>
@@ -54,26 +54,26 @@ export function OptionRow({ option, selected, onSelect }: CardProps) {
       onClick={onSelect}
       className={cn(
         "flex items-center gap-[13px] rounded-2xl border p-[15px] text-left transition-all active:scale-[0.98]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ed-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ed-bg",
         selected
-          ? "border-green/[0.45] bg-green/[0.08] shadow-[0_0_24px_hsl(152_72%_48%/0.12)]"
-          : "border-white/[0.06] bg-white/[0.035]"
+          ? "border-ed-accent bg-ed-accent-soft "
+          : "border-ed-border-strong bg-ed-surface"
       )}
     >
       {Icon && (
         <span
           className={cn(
             "flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-xl border",
-            selected ? "border-green/[0.35] bg-green/[0.16] text-green" : "border-white/[0.08] bg-white/[0.035] text-green/70"
+            selected ? "border-ed-accent bg-ed-accent-soft text-ed-accent-ink" : "border-ed-border-strong bg-ed-surface text-ed-accent-ink"
           )}
         >
           <Icon className="h-[19px] w-[19px]" />
         </span>
       )}
-      <span className={cn("flex-1 text-[15px] font-semibold", selected ? "text-foreground" : "text-foreground/80")}>
+      <span className={cn("flex-1 text-[15px] font-semibold", selected ? "text-ed-text" : "text-ed-text")}>
         {option.label}
       </span>
-      <ChevronRight className={cn("h-4 w-4 shrink-0", selected ? "text-green" : "text-white/30")} />
+      <ChevronRight className={cn("h-4 w-4 shrink-0", selected ? "text-ed-accent-ink" : "text-ed-text-3")} />
     </button>
   );
 }
@@ -88,20 +88,20 @@ export function RadioRow({ option, selected, onSelect }: CardProps) {
       onClick={onSelect}
       className={cn(
         "flex items-center justify-between gap-3 rounded-2xl border px-[18px] py-[17px] text-left transition-all active:scale-[0.98]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ed-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ed-bg",
         selected
-          ? "border-green/50 bg-green/[0.08] shadow-[0_0_24px_hsl(152_72%_48%/0.12)]"
-          : "border-white/[0.06] bg-white/[0.035]"
+          ? "border-ed-accent bg-ed-accent-soft "
+          : "border-ed-border-strong bg-ed-surface"
       )}
     >
-      <span className={cn("text-[15px] font-semibold", selected ? "text-foreground" : "text-foreground/80")}>{option.label}</span>
+      <span className={cn("text-[15px] font-semibold", selected ? "text-ed-text" : "text-ed-text")}>{option.label}</span>
       <span
         className={cn(
           "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border-2",
-          selected ? "border-green bg-green" : "border-white/[0.16]"
+          selected ? "border-ed-accent bg-ed-accent-ink" : "border-ed-border-strong"
         )}
       >
-        {selected && <Check className="h-3 w-3 text-black" strokeWidth={3.4} />}
+        {selected && <Check className="h-3 w-3 text-ed-on-accent" strokeWidth={3.4} />}
       </span>
     </button>
   );

@@ -213,9 +213,40 @@ export function detectOpportunities(s: StoredStory): Opportunity[] {
 // =====================================================================
 // ACTION ENGINE — "What should I do this week?"
 // =====================================================================
+
+// feed_items.action is 100% populated (11/11 distinct values across every row
+// with a value — confirmed by DB audit) from the same fabricated template pool
+// as why_it_matters's stripped "Opportunity:" clause: the editorial pipeline
+// drops the leading verb and stores just the object clause here. Exact-match
+// against the confirmed closed set, not a broad heuristic, so a genuine future
+// "Try this:" value from a fixed pipeline is never mistaken for contamination.
+const FABRICATED_ACTION_RX = new RegExp(
+  "^(" + [
+    "this workflow in your repo and measure the hours it claws back per week",
+    "or repackage your product around the new platform default within 30 days",
+    "your evals against this model; if it wins on your traffic, switch the default this week",
+    "sTT\\+LLM\\+TTS pipelines for one realtime call and benchmark latency before customers notice",
+    "it now while engagement is low; integrate before competitors discover it",
+    "this against your current pipeline and switch if metrics improve within 7 days",
+    "small-corpus RAG to the new context window and measure cost and recall difference",
+    "a wedge product targeting this gap before incumbents notice the demand",
+    "this technique against your hardest benchmark and ship if it wins on real traffic",
+    "adjacent niches this round leaves uncovered and ship a wedge before they hire into them",
+    "this on a small GPU pool to cut inference cost and reclaim margin from the API tier",
+  ].join("|") + ")\\.?$",
+  "i",
+);
+
+/** Strip the "Try this:" prefix and reject it if the remainder is a known
+ * fabricated template — returns "" (never fabricates a replacement) when so. */
+export function cleanAction(raw?: string | null): string {
+  const stored = (raw ?? "").replace(/^try this:\s*/i, "").trim();
+  return FABRICATED_ACTION_RX.test(stored) ? "" : stored;
+}
+
 export function actionForUser(s: StoredStory, profile: UserProfile): string {
-  // Prefer the editor's concrete "Try this:" action when present.
-  const stored = (s.action ?? "").replace(/^try this:\s*/i, "").trim();
+  // Prefer the editor's concrete "Try this:" action when present and genuine.
+  const stored = cleanAction(s.action);
   const blob = `${s.summary} ${s.what_happened ?? ""}`.toLowerCase();
   const verb = profile.persona === "founder" ? "Evaluate"
     : profile.persona === "agency" ? "Package"

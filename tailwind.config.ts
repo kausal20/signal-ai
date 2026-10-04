@@ -2,7 +2,7 @@ import type { Config } from "tailwindcss";
 
 export default {
   darkMode: ["class"],
-  content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
+  content: { relative: true, files: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"] },
   prefix: "",
   theme: {
     container: { center: true, padding: "2rem", screens: { "2xl": "1400px" } },
@@ -23,6 +23,24 @@ export default {
         green: "hsl(var(--green))",
         "green-soft": "hsl(var(--green-soft))",
         amber: "hsl(var(--amber))",
+        // Editorial design system (src/ui-editorial). Values are RGB triplets
+        // set per theme on `.ed-root`, so opacity modifiers (bg-ed-text/10) work.
+        ed: {
+          bg: "rgb(var(--ed-bg) / <alpha-value>)",
+          surface: "rgb(var(--ed-surface) / <alpha-value>)",
+          sunken: "rgb(var(--ed-sunken) / <alpha-value>)",
+          text: "rgb(var(--ed-text) / <alpha-value>)",
+          "text-2": "rgb(var(--ed-text-2) / <alpha-value>)",
+          "text-3": "rgb(var(--ed-text-3) / <alpha-value>)",
+          border: "rgb(var(--ed-border) / <alpha-value>)",
+          "border-strong": "rgb(var(--ed-border-strong) / <alpha-value>)",
+          accent: "rgb(var(--ed-accent) / <alpha-value>)",
+          "accent-ink": "rgb(var(--ed-accent-ink) / <alpha-value>)",
+          "accent-soft": "rgb(var(--ed-accent-soft) / <alpha-value>)",
+          "on-accent": "rgb(var(--ed-on-accent) / <alpha-value>)",
+          positive: "rgb(var(--ed-positive) / <alpha-value>)",
+          negative: "rgb(var(--ed-negative) / <alpha-value>)",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -31,6 +49,7 @@ export default {
       },
       fontFamily: {
         sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+        serif: ["Newsreader", "Source Serif 4", "Georgia", "Times New Roman", "serif"],
         mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "monospace"],
       },
       keyframes: {

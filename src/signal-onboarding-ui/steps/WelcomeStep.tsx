@@ -30,14 +30,15 @@ function SourceLogo({ source }: { source: string }) {
   if (!key) return null;
 
   return (
-    <img
-      src={BRAND_LOGOS[key]}
-      width={12}
-      height={12}
-      alt={source}
-      className="shrink-0 opacity-90"
-      style={{ width: 12, height: 12, objectFit: "contain" }}
-    />
+    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white p-1">
+      <img
+        src={BRAND_LOGOS[key]}
+        width={18}
+        height={18}
+        alt={`${source} logo`}
+        className="h-[18px] w-[18px] object-contain brightness-0"
+      />
+    </span>
   );
 }
 
@@ -67,11 +68,11 @@ export function WelcomeStep({ peek = DEFAULT_PEEK, onGetStarted }: Props) {
   const loop = [...feedSequence, ...feedSequence];
 
   return (
-    <div className="relative h-full overflow-hidden bg-[#070707]">
+    <div className="relative h-full overflow-hidden bg-ed-bg">
       {/* ── Live feed peek ─────────────────────────────────────────────── */}
       {/* Full-screen feed rail, masked so it stays atmospheric behind copy. */}
       <div
-        className="pointer-events-none absolute inset-0 overflow-hidden"
+        aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden"
         style={{
           maskImage:
             "linear-gradient(to bottom, transparent 0%, #000 5%, #000 86%, transparent 100%)",
@@ -82,32 +83,30 @@ export function WelcomeStep({ peek = DEFAULT_PEEK, onGetStarted }: Props) {
         <div
           className="welcome-feed-scroll absolute inset-x-0 -top-10 flex flex-col gap-3 px-[16px]"
           style={{
-            opacity: 0.94,
-            filter: "blur(0.05px)",
             willChange: "transform",
           }}
         >
           {loop.map((f, i) => (
             <div
               key={i}
-              className="rounded-2xl border border-green/[0.16] bg-white/[0.058] px-[15px] py-3.5 shadow-[0_10px_34px_hsl(152_72%_48%/0.09)]"
+              className="rounded-2xl border border-ed-accent bg-ed-surface px-[15px] py-3.5 "
             >
               {/* Eyebrow row */}
               <div className="mb-2 flex items-center gap-2">
                 <SourceLogo source={f.source} />
-                <span className="font-mono-tight text-[9px] font-bold tracking-[0.14em] text-green">
+                <span className="ed-numeral text-[9px] font-bold tracking-[0.14em] text-ed-accent-ink">
                   {f.source}
                 </span>
-                <span className="h-[3px] w-[3px] rounded-full bg-white/25" />
-                <span className="text-[9px] font-bold tracking-[0.14em] text-muted-foreground">
+                <span className="h-[3px] w-[3px] rounded-full bg-ed-surface" />
+                <span className="text-[9px] font-bold tracking-[0.14em] text-ed-text-2">
                   {f.tag}
                 </span>
-                <span className="ml-auto font-mono-tight text-[10px] text-green">
+                <span className="ml-auto ed-numeral text-[10px] text-ed-accent-ink">
                   {f.score}
                 </span>
               </div>
               {/* Headline */}
-              <div className="text-sm font-semibold leading-snug text-foreground/90">
+              <div className="text-sm font-semibold leading-snug text-ed-text">
                 {f.title}
               </div>
             </div>
@@ -115,24 +114,16 @@ export function WelcomeStep({ peek = DEFAULT_PEEK, onGetStarted }: Props) {
         </div>
       </div>
 
-      {/* ── Scrim gradient ─────────────────────────────────────────────── */}
-      {/* Transparent at top → page bg by ~72% down                       */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,hsl(0_0%_3%/0.00)_0%,hsl(0_0%_3%/0.18)_34%,hsl(0_0%_3%/0.68)_54%,hsl(0_0%_3%/0.90)_76%,#070707_92%)]" />
-
       {/* ── Bottom content block ───────────────────────────────────────── */}
-      <div className="absolute inset-x-0 bottom-0 flex animate-fade-up flex-col items-start px-7 pb-[40px]">
-        {/* Eyebrow label */}
-        <div className="mb-3.5 text-[10px] font-bold tracking-[0.24em] text-green">
-          SIGNAL · AI INTELLIGENCE
-        </div>
-
+      <div className="absolute inset-x-0 bottom-0 flex animate-fade-up flex-col items-start bg-ed-bg px-7 pb-[40px] pt-2">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 -top-12 h-12 bg-gradient-to-b from-transparent to-ed-bg" />
         {/* Headline */}
-        <h1 className="mb-4 text-[34px] font-extrabold leading-[1.08] tracking-[-0.03em] text-foreground">
-          <span className="text-green">AI</span> intelligence.<br />Zero noise.
+        <h1 className="ed-serif mb-4 text-[34px] font-semibold leading-[1.08] tracking-[-0.03em] text-ed-text">
+          <span className="text-ed-accent-ink">AI</span> intelligence.<br />Zero noise.
         </h1>
 
         {/* Subheadline */}
-        <p className="mb-7 max-w-[300px] text-sm leading-relaxed text-muted-foreground">
+        <p className="mb-7 max-w-[300px] text-sm leading-relaxed text-ed-text-2">
           Signal scans thousands of sources and surfaces only the AI moves that matter to you.
         </p>
 
@@ -140,7 +131,7 @@ export function WelcomeStep({ peek = DEFAULT_PEEK, onGetStarted }: Props) {
         <button
           type="button"
           onClick={onGetStarted}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-green py-[17px] text-base font-bold text-black shadow-[0_8px_30px_hsl(152_72%_48%/0.3)] transition-transform active:scale-[0.98]"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-ed-accent-ink py-[17px] text-base font-bold text-ed-on-accent  transition-transform active:scale-[0.98]"
         >
           Get Started <ArrowRight className="h-[17px] w-[17px]" />
         </button>
@@ -149,7 +140,7 @@ export function WelcomeStep({ peek = DEFAULT_PEEK, onGetStarted }: Props) {
 
       {/* ── Scoped keyframes (self-contained; no global CSS dependency) ──── */}
       <style>{`
-        .welcome-feed-scroll {
+        .ed-onboarding .welcome-feed-scroll {
           animation-name: welcomeFeedScroll !important;
           animation-duration: 65s !important;
           animation-timing-function: linear !important;
@@ -160,7 +151,7 @@ export function WelcomeStep({ peek = DEFAULT_PEEK, onGetStarted }: Props) {
         }
         @keyframes welcomeFeedScroll {
           from { transform: translate3d(0, 0, 0); }
-          to   { transform: translate3d(0, -50%, 0); }
+          to   { transform: translate3d(0, calc(-50% - 6px), 0); }
         }
         @keyframes radarPulse {
           0% {

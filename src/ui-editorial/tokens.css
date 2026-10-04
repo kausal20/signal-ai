@@ -1,0 +1,171 @@
+/* Signal editorial design system — tokens.
+   Scoped to `.ed-root` so the legacy dark routes (onboarding, AI Pulse, …)
+   keep their own look. Colours are RGB triplets so Tailwind opacity modifiers
+   work (bg-ed-text/10). No gradients, no glow, no glass.
+
+   Contrast notes (WCAG AA, measured against --ed-bg):
+   · text / text-2 / accent-ink pass 4.5:1 → use for all readable text.
+   · text-3 (#8D918B) is ~3:1 → icons, placeholders, disabled — never body/meta.
+   · accent (#1E8E62) is ~3.9:1 → indicators, dots, underlines, focus rings.
+     Green TEXT and filled buttons use accent-ink (dark green) instead. */
+
+.ed-root {
+  --ed-bg: 247 247 244;          /* #F7F7F4 */
+  --ed-surface: 255 255 255;     /* #FFFFFF */
+  --ed-sunken: 240 240 236;      /* #F0F0EC — pressed rows, user bubble, skeletons */
+  --ed-text: 23 24 23;           /* #171817 */
+  --ed-text-2: 98 102 96;        /* #626660 */
+  --ed-text-3: 141 145 139;      /* #8D918B */
+  --ed-border: 224 225 220;      /* #E0E1DC */
+  --ed-border-strong: 180 183 176;
+  --ed-accent: 30 142 98;        /* #1E8E62 — the signal */
+  --ed-accent-ink: 23 77 58;     /* #174D3A — green text + filled controls */
+  --ed-accent-soft: 232 243 237; /* #E8F3ED */
+  --ed-on-accent: 255 255 255;
+  --ed-positive: 52 122 75;      /* #347A4B */
+  --ed-negative: 201 75 60;      /* #C94B3C */
+
+  color-scheme: light;
+  background-color: rgb(var(--ed-bg));
+  color: rgb(var(--ed-text));
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The product is a phone-first app. On a desktop preview, center one device
+   surface so the fixed navigation and content share the same physical frame. */
+.ed-stage {
+  min-height: 100dvh;
+  background: #dfe4de;
+}
+
+.ed-root {
+  max-width: 430px;
+  margin-inline: auto;
+  overflow-x: hidden;
+  box-shadow: 0 0 0 1px rgb(23 24 23 / 0.08), 0 24px 70px rgb(23 24 23 / 0.16);
+}
+
+@media (max-width: 519px) {
+  .ed-stage { background: rgb(var(--ed-bg)); }
+  .ed-root { box-shadow: none; }
+}
+
+.ed-root[data-ed-theme="dark"] {
+  --ed-bg: 18 19 18;
+  --ed-surface: 26 28 26;
+  --ed-sunken: 33 35 33;
+  --ed-text: 242 242 238;
+  --ed-text-2: 169 173 166;
+  --ed-text-3: 124 128 122;
+  --ed-border: 42 45 41;
+  --ed-border-strong: 74 78 72;
+  --ed-accent: 61 190 138;
+  --ed-accent-ink: 127 214 174;
+  --ed-accent-soft: 23 38 31;
+  --ed-on-accent: 11 26 18;
+  --ed-positive: 99 187 128;
+  --ed-negative: 232 120 105;
+  color-scheme: dark;
+}
+
+/* Signal AI — the deeper "intelligence layer" surface (same in both themes). */
+.ed-root[data-ed-surface="deep"] {
+  --ed-bg: 23 24 23;             /* #171817 */
+  --ed-surface: 31 33 31;
+  --ed-sunken: 38 40 38;
+  --ed-text: 247 247 244;        /* #F7F7F4 */
+  --ed-text-2: 176 180 173;
+  --ed-text-3: 130 134 128;
+  --ed-border: 48 51 47;
+  --ed-border-strong: 78 82 76;
+  --ed-accent: 30 142 98;
+  --ed-accent-ink: 125 211 172;
+  --ed-accent-soft: 24 40 33;
+  --ed-on-accent: 11 26 18;
+  --ed-positive: 99 187 128;
+  --ed-negative: 232 120 105;
+  color-scheme: dark;
+}
+
+.ed-root *,
+.ed-root *::before,
+.ed-root *::after {
+  border-color: rgb(var(--ed-border));
+}
+
+.ed-root ::selection {
+  background: rgb(var(--ed-accent) / 0.25);
+  color: rgb(var(--ed-text));
+}
+
+.ed-root :focus-visible {
+  outline: 2px solid rgb(var(--ed-accent));
+  outline-offset: 2px;
+}
+.ed-root .ed-prompt-input:focus-visible,
+.ed-root .ed-onboarding-input:focus-visible { outline: none; }
+.ed-root :focus:not(:focus-visible) { outline: none; }
+
+/* Small uppercase label — section / kicker text. */
+.ed-eyebrow {
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgb(var(--ed-text-2));
+}
+
+.ed-serif { font-family: "Newsreader", "Source Serif 4", Georgia, "Times New Roman", serif; }
+.ed-numeral { font-variant-numeric: lining-nums tabular-nums; }
+
+.ed-skeleton {
+  background-color: rgb(var(--ed-sunken));
+  border-radius: 4px;
+  animation: ed-pulse 1.6s ease-in-out infinite;
+}
+@keyframes ed-pulse { 50% { opacity: 0.5; } }
+
+/* Streaming caret for the AI answer. */
+.ed-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: rgb(var(--ed-accent));
+  animation: ed-blink 1s steps(2, start) infinite;
+}
+@keyframes ed-blink { to { visibility: hidden; } }
+
+.ed-skip-link {
+  position: absolute;
+  left: 16px;
+  top: -48px;
+  z-index: 100;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgb(var(--ed-text));
+  color: rgb(var(--ed-bg));
+  font-size: 14px;
+  font-weight: 600;
+  transition: top 0.15s ease;
+}
+.ed-skip-link:focus { top: 12px; }
+
+.ed-hairline-b { border-bottom: 1px solid rgb(var(--ed-border)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ed-root *,
+  .ed-root *::before,
+  .ed-root *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

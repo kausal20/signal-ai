@@ -15,8 +15,8 @@ export function RoleStep({ options = ROLES, value, onSelect }: Props) {
   return (
     <div className="flex h-full flex-col px-[22px] pt-24">
       <div className="mb-5 animate-fade-up">
-        <div className="mb-2 text-[11px] font-bold tracking-[0.18em] text-green">ABOUT YOU · 1 / 3</div>
-        <h2 className="text-[25px] font-extrabold tracking-[-0.02em] text-foreground">What best describes you?</h2>
+        <div className="mb-2 text-[11px] font-bold tracking-[0.18em] text-ed-accent-ink">ABOUT YOU · 1 / 3</div>
+        <h2 className="ed-serif text-[25px] font-semibold tracking-[-0.02em] text-ed-text">What best describes you?</h2>
       </div>
       <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto pb-7">
         <div className="grid grid-cols-2 gap-[11px]">

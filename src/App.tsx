@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
-import { AnimatePresence } from "framer-motion";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { AnimatePresence, MotionConfig } from "framer-motion";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -27,6 +27,18 @@ const Strategy = lazy(loadStrategy);
 const Weekly = lazy(loadWeekly);
 const AiPulsePage = lazy(loadAiPulse);
 const PromptLibrary = lazy(loadPrompts);
+
+// Editorial redesign — master switch. ON: Home / Search / Signal / Saved /
+// Profile render in the editorial shell (outside the phone frame) and
+// /advisor + /settings forward to Signal + Profile. OFF: everything below the
+// flag behaves exactly as before. Nothing legacy is deleted.
+const USE_EDITORIAL_UI = true;
+const EditorialLayout = lazy(() => import("./routes/editorial/EditorialLayout.tsx"));
+const EdHome = lazy(() => import("./routes/editorial/HomeRoute.tsx"));
+const EdSearch = lazy(() => import("./routes/editorial/SearchRoute.tsx"));
+const EdSignal = lazy(() => import("./routes/editorial/SignalRoute.tsx"));
+const EdSaved = lazy(() => import("./routes/editorial/SavedRoute.tsx"));
+const EdProfile = lazy(() => import("./routes/editorial/ProfileRoute.tsx"));
 
 // Showcase is a fullscreen cinematic route — lazy-loaded so it never enters
 // the main bundle or the PhoneFrame layout.
@@ -83,6 +95,7 @@ function AnimatedRoutes() {
 }
 
 const App = () => (
+  <MotionConfig reducedMotion="user">
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <BrowserRouter>
@@ -96,6 +109,20 @@ const App = () => (
               </Suspense>
             }
           />
+          {/* Editorial destinations — own shell, no phone frame */}
+          {USE_EDITORIAL_UI && (
+            <Route element={<Suspense fallback={null}><EditorialLayout /></Suspense>}>
+              <Route path="/" element={<EdHome />} />
+              <Route path="/search" element={<EdSearch />} />
+              <Route path="/signal" element={<EdSignal />} />
+              <Route path="/saved" element={<EdSaved />} />
+              <Route path="/profile" element={<EdProfile />} />
+            </Route>
+          )}
+          {/* Advisor is retired as a destination — Signal AI is the one assistant. */}
+          {USE_EDITORIAL_UI && <Route path="/advisor" element={<Navigate to="/signal" replace />} />}
+          {USE_EDITORIAL_UI && <Route path="/settings" element={<Navigate to="/profile" replace />} />}
+          {USE_EDITORIAL_UI && <Route path="/onboarding" element={<><Onboarding /><Toaster /><Sonner /></>} />}
           {/* All other app routes render inside the phone frame */}
           <Route
             path="*"
@@ -111,6 +138,7 @@ const App = () => (
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
+  </MotionConfig>
 );
 
 export default App;

@@ -669,8 +669,9 @@ export async function secondPassReview(
   breaker?: { canAttempt: () => boolean },
 ): Promise<SignalItem[]> {
   if (items.length <= 1) return items;
-  const shortlist = items.slice(0, 25);
-  const rest = items.slice(25);
+  const reviewLimit = Math.min(items.length, Math.max(1, Number(Deno.env.get("AI_REVIEW_STORY_LIMIT") ?? 10)));
+  const shortlist = items.slice(0, reviewLimit);
+  const rest = items.slice(reviewLimit);
 
   if (breaker && !breaker.canAttempt()) return secondPassFallback(items);
 
@@ -790,6 +791,20 @@ export function secondPassFallback(items: SignalItem[]): SignalItem[] {
 }
 
 // =====================================================================
+// trimWords() hard-cuts at a word count and appends "..." — fine for short
+// controlled-vocabulary strings (audience/opportunity phrases we generate
+// ourselves), wrong for a sentence lifted straight from article body text:
+// it produces a fragment truncated mid-sentence. This picks a genuinely
+// clean whole sentence instead — skips sentences that read as continuations
+// (BANNED_HEADLINE_LEAD: "previously", "however", "meanwhile", ...) and
+// skips ones too long to state in full within maxWords, rather than cutting
+// them short. Falls back to the real article title if nothing qualifies.
+function pickWhatHappened(sentences: string[], rawTitle: string, maxWords = 26): string {
+  const clean = sentences.filter((s) => !BANNED_HEADLINE_LEAD.test(s.trim()) && wordCount(s) <= maxWords);
+  const withFacts = clean.find((s) => /\d|%|\$/.test(s));
+  return cleanText(withFacts ?? clean[0] ?? polishHeadline(rawTitle));
+}
+
 // Stage 8 (fallback path): deterministic editor — runs when the AI is down.
 // =====================================================================
 export function fallbackCurate(clusters: StoryCluster[]): SignalItem[] {
@@ -811,9 +826,7 @@ export function fallbackCurate(clusters: StoryCluster[]): SignalItem[] {
 
     const sentences = (p.rawText || "").split(/(?<=[.!?])\s+/).filter((x) => wordCount(x) >= 5);
     const headline = polishHeadline(p.rawTitle);
-    const whatHappened = trimWords(
-      sentences.find((s) => /\d|%|\$/.test(s)) || sentences[0] || p.rawTitle, 26,
-    );
+    const whatHappened = pickWhatHappened(sentences, p.rawTitle, 26);
     const whyItMatters = trimWords(sentences[1] || fallbackWhyItMatters(category, p, blob), 24);
     const whoFor = trimWords(fallbackAudience(category, lower), 8);
     const opportunity = trimWords(fallbackOpportunity(category, lower), 18);

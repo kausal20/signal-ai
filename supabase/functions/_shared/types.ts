@@ -60,6 +60,13 @@ export interface RawItem {
   publisher?: string;
   publisherDomain?: string;
   originalUrl?: string;   // real article URL (decoded from Google-News redirects)
+  // Real scraped article body (see _shared/article_body.ts), when it was worth
+  // fetching and extraction succeeded. rawText stays the short RSS/meta teaser
+  // regardless — this is additive, used only to fill content_archive.full_content.
+  fullText?: string;
+  // The publisher's own image for the article (feed media tag or og:image),
+  // https only. Never generated; stored by URL and attributed in the UI.
+  image?: string;
 }
 
 export interface StoryCluster {

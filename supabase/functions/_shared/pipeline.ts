@@ -298,12 +298,16 @@ export async function runPipeline(input: OrchestratorInput): Promise<Orchestrato
     // — degraded, not blocking) and let the function return + mark the run done,
     // instead of being killed at the wall-clock and stuck in status=running.
     const reasoningDeadline = Date.now() + 30_000;
-    for (let i = 0; i < daily.length; i += 3) {
+    // Keep the reusable deep reasoning layer bounded. The feed can contain
+    // more stories than need expensive multi-agent analysis; the remaining
+    // stories still publish with deterministic editorial intelligence.
+    const reasoningLimit = Math.min(daily.length, Math.max(0, Number(Deno.env.get("AI_REASONING_STORY_LIMIT") ?? 5)));
+    for (let i = 0; i < reasoningLimit; i += 3) {
       if (Date.now() > reasoningDeadline) {
         logger.warn("reasoning_budget_exhausted", { stage: "reasoning", meta: { reasoned, total: daily.length } });
         break;
       }
-      const batch = daily.slice(i, i + 3);
+      const batch = daily.slice(i, Math.min(i + 3, reasoningLimit));
       const results = await Promise.all(batch.map(async (item) => {
         const story = item as unknown as StoredStory;
         const ctx = buildTrendContext(item.trend_entities ?? [], trendIndex);

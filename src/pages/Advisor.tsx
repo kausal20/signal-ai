@@ -147,6 +147,7 @@ export default function Advisor() {
         }}
         onToggleSave={(id) => toggleBookmark(id)}
         onToggleStep={(id) => toggleDone(id)}
+        onOpenStrategy={() => navigate("/strategy")}
       />
     );
   }

@@ -162,6 +162,26 @@ export const CHANNEL_FREQUENCY: Record<string, string> = {
   docs: "docs", changelog: "github", research: "research", github: "github",
 };
 
+export interface ExistingConnectorRef { source: string; feedUrl: string | null }
+
+/**
+ * Canonical connector identity for discovery. Given an entity's existing
+ * connectors and a freshly-discovered candidate feed URL, decide whether to
+ * reuse an existing connector's id (same feed URL already registered under a
+ * different source id -> dedup) or mint the new candidate id. This is the
+ * single rule that prevents discover-sources from creating two connectors
+ * for the identical feed.
+ */
+export function resolveConnectorId(
+  candidateId: string,
+  candidateFeedUrl: string,
+  existing: ExistingConnectorRef[],
+): string {
+  const feedUrl = candidateFeedUrl.trim();
+  const dupe = existing.find((c) => c.feedUrl && c.feedUrl.trim() === feedUrl && c.source !== candidateId);
+  return dupe ? dupe.source : candidateId;
+}
+
 /** Verification confidence 0..100 from the signals we actually have. */
 export function verificationConfidence(args: {
   https: boolean; nameMatch: boolean; feedValid: boolean; learnedDomain: boolean; entityMatch: boolean;

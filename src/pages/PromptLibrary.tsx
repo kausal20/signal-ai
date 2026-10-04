@@ -13,10 +13,16 @@ import {
   fetchRecent, fetchPrompt, toggleSave, copyPrompt, generatePrompt, trackView,
   isSaved, track, type Prompt,
 } from "@/lib/prompts";
+import { PromptLibraryPage } from "@/ui-v2/pages/PromptLibraryPage";
+
+// P6 migration flag — new ui-v2 Prompt Library. Old page stays below until verified.
+const USE_V2_PROMPTS = true;
 
 type Lane = "trending" | "editor" | "saved" | "recent";
 
 export default function PromptLibrary() {
+  if (USE_V2_PROMPTS) return <PromptLibraryPage />;
+
   const navigate = useNavigate();
   const reduce = useReducedMotion();
   const [query, setQuery] = useState("");

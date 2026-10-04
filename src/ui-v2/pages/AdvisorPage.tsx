@@ -4,7 +4,7 @@
 // plan timeline, scroll-triggered sections, and premium entrance choreography.
 // ---------------------------------------------------------------------------
 
-import { Ban, ChevronRight } from "lucide-react";
+import { Ban, Brain, ChevronRight } from "lucide-react";
 import { motion as fm, useReducedMotion } from "framer-motion";
 import { ScreenShell } from "../layouts/ScreenShell";
 import { BottomNav } from "../layouts/BottomNav";
@@ -36,12 +36,13 @@ interface Props {
   onToggleSave?: (id: string) => void;
   onToggleStep?: (id: string) => void;
   onOpenTomorrow?: () => void;
+  onOpenStrategy?: () => void;
 }
 
 export function AdvisorPage({
   greeting, greetingSub = "Here's the one thing I'd spend it on.",
   recommendation, plan, skip, project, tomorrow,
-  starting, bookmarkCount = 0, onNavigate, onStart, onAsk, onToggleSave, onToggleStep, onOpenTomorrow,
+  starting, bookmarkCount = 0, onNavigate, onStart, onAsk, onToggleSave, onToggleStep, onOpenTomorrow, onOpenStrategy,
 }: Props) {
   const reduce = useReducedMotion();
 
@@ -64,6 +65,14 @@ export function AdvisorPage({
         <span className="text-sm font-extrabold text-foreground">Advisor</span>
         <LivePulse bare className="mt-1 text-[10px]" label="Briefed for today" />
       </div>
+      <button
+        type="button"
+        onClick={onOpenStrategy}
+        aria-label="AI Strategy chat"
+        className="ml-auto flex h-9 w-9 items-center justify-center rounded-full border border-green/20 bg-green/[0.1] text-green transition-transform active:scale-90"
+      >
+        <Brain className="h-4 w-4" />
+      </button>
     </fm.div>
   );
 

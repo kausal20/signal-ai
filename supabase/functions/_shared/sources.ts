@@ -9,6 +9,7 @@ import {
 } from "./text.ts";
 import { withRetry, httpRetryable } from "./reliability.ts";
 import { splitPublisherSuffix, domainOf } from "./content_type.ts";
+import { extractFeedImage, normalizeImageUrl } from "./images.ts";
 import type { RawItem, SourceConnector, SourceKind, SourceTier } from "./types.ts";
 
 // -------------------------------------------------------------------------
@@ -28,6 +29,7 @@ export function makeRaw(args: {
   publisher?: string;
   publisherDomain?: string;
   originalUrl?: string;
+  image?: string;
 }): RawItem | null {
   const canonicalUrl = canonicalizeUrl(args.url);
   if (!canonicalUrl) return null;
@@ -57,10 +59,11 @@ export function makeRaw(args: {
     publisher: args.publisher || args.sourceLabel.replace(/\s+coverage$/i, ""),
     publisherDomain: args.publisherDomain || domainOf(originalUrl),
     originalUrl,
+    image: normalizeImageUrl(args.image, originalUrl) ?? undefined,
   };
 }
 
-interface FeedEntry { title: string; link: string; date: string; desc: string; publisher: string; publisherUrl: string }
+interface FeedEntry { title: string; link: string; date: string; desc: string; publisher: string; publisherUrl: string; image?: string }
 
 function parseFeed(xml: string): FeedEntry[] {
   const out: FeedEntry[] = [];
@@ -77,7 +80,10 @@ function parseFeed(xml: string): FeedEntry[] {
     const srcTag = block.match(/<source\b([^>]*)>([\s\S]*?)<\/source>/i);
     const publisher = cleanText(srcTag?.[2] || "");
     const publisherUrl = cleanText(srcTag?.[1]?.match(/url="([^"]+)"/i)?.[1] || "");
-    if (title && link) out.push({ title, link, date, desc, publisher, publisherUrl });
+    // Google-News items carry only a generic thumbnail (filtered out by
+    // normalizeImageUrl); direct publisher feeds usually carry the real photo.
+    const image = extractFeedImage(block, link) ?? undefined;
+    if (title && link) out.push({ title, link, date, desc, publisher, publisherUrl, image });
   }
   return out;
 }
@@ -152,6 +158,7 @@ export async function fetchRSS(
       engagement: baseEngagement,
       published_at: pub.toISOString(),
       publisher, publisherDomain, originalUrl,
+      image: e.image,
     });
     if (raw) out.push(raw);
   }

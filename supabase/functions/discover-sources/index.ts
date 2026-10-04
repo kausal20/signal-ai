@@ -21,7 +21,7 @@ import {
   candidateDomains, parseFeedLinks, nameMatchesPage, looksLikeFeed,
   RSS_PROBE_PATHS_EXT, SECTION_PROBES, SUBDOMAIN_PROBES, CHANNEL_COLUMN, CHANNEL_FREQUENCY,
   absoluteUrl, hostOf, parseRobotsSitemaps, parseSitemapFeeds, extractPublisherName,
-  githubFeeds, verificationConfidence, type OfficialChannel,
+  githubFeeds, verificationConfidence, resolveConnectorId, type OfficialChannel,
 } from "../_shared/source_discovery.ts";
 
 const corsHeaders = {
@@ -33,7 +33,12 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const SOFT_TIME_LIMIT_MS = 105_000;
-const DEFAULT_BATCH = 5;
+// Phase 4B: lowered from 5 -- each entity's discovery + writes can approach
+// ~30s, and a batch of 5 was pushing single invocations past the soft time
+// limit. A smaller batch completes reliably within the Edge Function budget;
+// the resumable cursor (official_sources_checked_at) means the rest is
+// simply picked up by the next cron tick.
+const DEFAULT_BATCH = 3;
 const FETCH_TIMEOUT_MS = 5_000;
 const PER_ENTITY_MS = 24_000;
 const RECHECK_DAYS = 30;
@@ -194,7 +199,7 @@ async function discoverForEntity(e: Entity, deadline: number): Promise<Discovere
     https: homepage.startsWith("https://"), nameMatch, feedValid, learnedDomain: learned, entityMatch: true,
   });
   const status: Discovered["status"] = Object.keys(channels).length ? (feedValid ? "ok" : "partial") : "partial";
-  return { domain, homepage, channels, feeds, nameMatch, feedValid, confidence, status };
+  return { domain, homepage, channels, feeds, sources, nameMatch, feedValid, confidence, status };
 }
 
 // Shared platforms owned by no single entity — never per-entity publishers.
@@ -239,8 +244,13 @@ Deno.serve(async (req) => {
 
   for (const e of entities) {
     if (Date.now() - t0 > SOFT_TIME_LIMIT_MS) break;
+
+    // Stage 1 — domain + channel discovery. A failure HERE is a genuine
+    // discovery failure (network/resolution never completed) and is the only
+    // case that legitimately earns official_discovery_status='error'.
+    let d: Discovered;
     try {
-      const d = await discoverForEntity(e, Date.now() + PER_ENTITY_MS);
+      d = await discoverForEntity(e, Date.now() + PER_ENTITY_MS);
       const patch: Record<string, unknown> = {
         official_sources_checked_at: new Date().toISOString(),
         official_discovery_status: d.status,
@@ -248,13 +258,27 @@ Deno.serve(async (req) => {
       if (d.domain) { patch.official_domain = d.domain; withDomain++; }
       for (const [col, url] of Object.entries(d.channels)) patch[col] = url;
       await sb.from("entities").update(patch).eq("id", e.id);
+    } catch (err) {
+      console.error("[discover-sources] domain resolution failed", { id: e.id, name: e.canonical_name, message: err instanceof Error ? err.message : String(err) });
+      await sb.from("entities").update({ official_sources_checked_at: new Date().toISOString(), official_discovery_status: "error" }).eq("id", e.id);
+      processed++;
+      continue;
+    }
 
-      if (d.domain && d.confidence >= 40) {
-        // (A) official_publishers — the authority that classifies Official News.
-        //     Root company domain + every discovered channel host, deduped.
-        //     NEVER register shared platforms (github.com, medium…) as an entity's
-        //     publisher — they are owned by no single entity. GitHub content is an
-        //     ingesting FEED (releases atom), not a publisher domain.
+    // Stages 2-4 — publisher / registry / connector writes. Each runs in its
+    // OWN try/catch so a failure in one never erases the truthful discovery
+    // status already recorded above, and never masks a failure as success
+    // (Phase 4B: previously ANY exception here — most commonly in the
+    // connector stage — fell through to a single catch that overwrote a
+    // genuinely-successful discovery, e.g. a found feed + channels, with
+    // official_discovery_status='error', discarding real progress).
+    if (d.domain && d.confidence >= 40) {
+      // (A) official_publishers — the authority that classifies Official News.
+      //     Root company domain + every discovered channel host, deduped.
+      //     NEVER register shared platforms (github.com, medium…) as an entity's
+      //     publisher — they are owned by no single entity. GitHub content is an
+      //     ingesting FEED (releases atom), not a publisher domain.
+      try {
         const pubRows = new Map<string, { domain: string; ptype: string }>();
         pubRows.set(d.domain, { domain: d.domain, ptype: "company" });
         for (const [col, url] of Object.entries(d.channels)) {
@@ -269,33 +293,51 @@ Deno.serve(async (req) => {
           }, { onConflict: "domain" });
           if (!pErr) publishersWritten++;
         }
+      } catch (err) {
+        console.error("[discover-sources] publisher write failed", { id: e.id, name: e.canonical_name, message: err instanceof Error ? err.message : String(err) });
+      }
 
-        // (B) source_registry metadata.
-        await sb.rpc("upsert_source_registry", {
+      // (B) source_registry metadata.
+      try {
+        const { error: rErr } = await sb.rpc("upsert_source_registry", {
           p_publisher: e.canonical_name, p_domain: d.domain, p_source_type: "OFFICIAL_BLOG",
           p_trust: 100, p_company_id: e.id, p_website: `https://${d.domain}`,
           p_rss: d.channels[CHANNEL_COLUMN.rss] ?? null,
-        }).then(() => {}, () => {});
+        });
+        if (rErr) console.error("[discover-sources] registry write failed", { id: e.id, message: rErr.message });
+      } catch (err) {
+        console.error("[discover-sources] registry write failed", { id: e.id, name: e.canonical_name, message: err instanceof Error ? err.message : String(err) });
+      }
 
-        // (C) UOCAE Connector Factory — pick the HIGHEST-scored source as the
-        //     primary connector, and register the rest as fallback connectors
-        //     (disabled by default; the self-healing job promotes one when the
-        //     primary dies). Every connector carries the SAME interface, so the
-        //     universal factory + ingest dispatcher route by connector_type.
-        //     GitHub releases atom is also registered when we found the org.
-        //     PRIMARY sources[] entries are the ranked list; feeds[] adds the
-        //     github releases atom if present.
+      // (C) UOCAE Connector Factory — pick the HIGHEST-scored source as the
+      //     primary connector, and register the rest as fallback connectors
+      //     (disabled by default; the self-healing job promotes one when the
+      //     primary dies). Every connector carries the SAME interface, so the
+      //     universal factory + ingest dispatcher route by connector_type.
+      //     GitHub releases atom is also registered when we found the org.
+      //     PRIMARY sources[] entries are the ranked list; feeds[] adds the
+      //     github releases atom if present.
+      try {
         const ranked = [...d.sources].sort((a, b) => b.score - a.score);
         // Attach a GitHub releases fallback when we detected a real org.
         for (const f of d.feeds) if (f.channel === "github") ranked.push({ type: "releases", url: f.url, score: TYPE_SCORE.releases });
         const freqToTier: Record<string, string> = { breaking: "fast", github: "fast", blog: "fast", press: "medium", docs: "slow", research: "slow", support: "slow" };
         const CHANNEL_OF_TYPE: Record<string, string> = { rss: "blog", atom: "blog", sitemap: "blog", blog: "blog", newsroom: "newsroom", changelog: "changelog", docs: "docs", releases: "github", github: "github", static: "blog" };
+
+        // Phase 4B: existing connectors for this entity, for dedup. Two
+        // connectors for the same entity must never share a feed_url — reuse
+        // the existing source id instead of minting a duplicate.
+        const { data: existingRows } = await sb
+          .from("source_connectors").select("source, feed_url").eq("entity_id", e.id);
+        const existing = (existingRows ?? []).map((r: { source: string; feed_url: string | null }) => ({ source: r.source, feedUrl: r.feed_url }));
+
         for (let i = 0; i < ranked.length && i < 4; i++) {
           const s = ranked[i];
           try {
             const channel = CHANNEL_OF_TYPE[s.type] ?? "blog";
             const freq = CHANNEL_FREQUENCY[channel] ?? "blog";
-            const cid = `official_${e.slug}_${s.type}`.slice(0, 60);
+            const candidateId = `official_${e.slug}_${s.type}`.slice(0, 60);
+            const cid = resolveConnectorId(candidateId, s.url, existing);
             const { error: cErr } = await sb.from("source_connectors").upsert({
               source: cid, source_label: `${e.canonical_name} (Official ${s.type})`,
               source_kind: "official",
@@ -316,17 +358,20 @@ Deno.serve(async (req) => {
               needs_rediscovery: false,
             }, { onConflict: "source" });
             if (cErr) console.error("[uocae] connector upsert", cid, cErr.message);
-            else { connectorsCreated++; if (i === 0) withFeed++; }
+            else {
+              connectorsCreated++;
+              if (i === 0) withFeed++;
+              if (!existing.some((x) => x.source === cid)) existing.push({ source: cid, feedUrl: s.url });
+            }
           } catch (err) {
             console.error("[uocae] connector loop", s.type, err instanceof Error ? err.message : err);
           }
         }
+      } catch (err) {
+        console.error("[discover-sources] connector stage failed", { id: e.id, name: e.canonical_name, message: err instanceof Error ? err.message : String(err) });
       }
-      processed++;
-    } catch (err) {
-      console.error("[discover-sources] entity failed", { id: e.id, name: e.canonical_name, message: err instanceof Error ? err.message : String(err) });
-      await sb.from("entities").update({ official_sources_checked_at: new Date().toISOString(), official_discovery_status: "error" }).eq("id", e.id);
     }
+    processed++;
   }
 
   const { count: remaining } = await sb.from("entities").select("id", { count: "exact", head: true })

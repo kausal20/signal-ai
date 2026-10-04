@@ -15,8 +15,8 @@ export function TimeStep({ options = TIME_OPTIONS, value, onSelect, onContinue }
   return (
     <div className="relative flex h-full flex-col px-[22px] pt-[100px]">
       <div className="mb-5 animate-fade-up">
-        <div className="mb-2 text-[11px] font-bold tracking-[0.18em] text-green">YOUR PACE</div>
-        <h2 className="text-2xl font-extrabold leading-snug tracking-[-0.02em] text-foreground">
+        <div className="mb-2 text-[11px] font-bold tracking-[0.18em] text-ed-accent-ink">YOUR PACE</div>
+        <h2 className="ed-serif text-2xl font-semibold leading-snug tracking-[-0.02em] text-ed-text">
           How much time can you invest in AI each week?
         </h2>
       </div>
@@ -27,7 +27,7 @@ export function TimeStep({ options = TIME_OPTIONS, value, onSelect, onContinue }
           ))}
         </div>
       </div>
-      <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(to_top,#070707_60%,transparent)] px-[22px] pb-[22px] pt-4">
+      <div className="absolute inset-x-0 bottom-0 bg-ed-bg px-[22px] pb-[22px] pt-4">
         <PrimaryButton disabled={!value} onClick={onContinue}>Continue</PrimaryButton>
       </div>
     </div>

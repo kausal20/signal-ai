@@ -329,6 +329,7 @@ export default function Settings() {
         onChangeGoal={scrollToEdit}
         onSaveInterests={handleSaveInterests}
         onReset={resetSignal}
+        onOpenWeekly={() => navigate("/weekly")}
       />
     );
   }

@@ -17,9 +17,9 @@ export function InterestsStep({ options = INTERESTS, selected, onToggle, onConti
   return (
     <div className="relative flex h-full flex-col px-[22px] pt-24">
       <div className="mb-[18px] animate-fade-up">
-        <div className="mb-2 text-[11px] font-bold tracking-[0.18em] text-green">ABOUT YOU · 3 / 3</div>
-        <h2 className="mb-1.5 text-[25px] font-extrabold tracking-[-0.02em] text-foreground">What should your feed cover?</h2>
-        <p className="text-[13px] text-muted-foreground">Pick at least {min}. Your feed builds as you tap.</p>
+        <div className="mb-2 text-[11px] font-bold tracking-[0.18em] text-ed-accent-ink">ABOUT YOU · 3 / 3</div>
+        <h2 className="ed-serif mb-1.5 text-[25px] font-semibold tracking-[-0.02em] text-ed-text">What should your feed cover?</h2>
+        <p className="text-[13px] text-ed-text-2">Pick at least {min}. Your feed builds as you tap.</p>
       </div>
 
       <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto pb-[120px]">
@@ -35,8 +35,8 @@ export function InterestsStep({ options = INTERESTS, selected, onToggle, onConti
                 className={cn(
                   "rounded-full border px-[15px] py-2.5 text-[12.5px] font-semibold transition-all active:scale-[0.93]",
                   on
-                    ? "border-green bg-green text-black shadow-[0_0_18px_hsl(152_72%_48%/0.3)]"
-                    : "border-white/[0.07] bg-white/[0.04] text-muted-foreground"
+                    ? "border-ed-accent bg-ed-accent-ink text-ed-on-accent "
+                    : "border-ed-border-strong bg-ed-surface text-ed-text-2"
                 )}
               >
                 {label}
@@ -46,10 +46,10 @@ export function InterestsStep({ options = INTERESTS, selected, onToggle, onConti
         </div>
       </div>
 
-      <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(to_top,#070707_60%,transparent)] px-[22px] pb-[22px] pt-[18px]">
+      <div className="absolute inset-x-0 bottom-0 bg-ed-bg px-[22px] pb-[22px] pt-[18px]">
         <div className="mb-3 flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">Topics selected</span>
-          <span className={cn("font-mono-tight text-[13px] font-semibold", valid ? "text-green" : "text-muted-foreground")}>
+          <span className="text-xs text-ed-text-2">Topics selected</span>
+          <span className={cn("ed-numeral text-[13px] font-semibold", valid ? "text-ed-accent-ink" : "text-ed-text-2")}>
             {selected.length}{valid ? "" : ` / ${min} min`}
           </span>
         </div>
@@ -59,7 +59,7 @@ export function InterestsStep({ options = INTERESTS, selected, onToggle, onConti
           onClick={onContinue}
           className={cn(
             "flex h-[54px] w-full items-center justify-center gap-2 rounded-2xl text-base font-bold transition-all active:scale-[0.98]",
-            valid ? "bg-green text-black shadow-[0_8px_30px_hsl(152_72%_48%/0.3)]" : "cursor-not-allowed bg-white/[0.05] text-white/20"
+            valid ? "bg-ed-accent-ink text-ed-on-accent " : "cursor-not-allowed bg-ed-surface text-ed-text-3"
           )}
         >
           Build my feed {valid && <ArrowRight className="h-[17px] w-[17px]" />}

@@ -13,7 +13,7 @@ import {
 } from "./intelligence_v2.ts";
 import { normConcept } from "./semantic.ts";
 import { deriveLearning } from "./continuous_learning.ts";
-import type { StoredStory } from "./intelligence_engine.ts";
+import { cleanAction, type StoredStory } from "./intelligence_engine.ts";
 
 const DECAY = 0.97;                  // old weight retention per update
 // CAP 1: positive + negative reinforcement across the full behaviour spectrum.
@@ -480,14 +480,21 @@ export function personalizeCard(
   });
 
   // `degraded` means the upstream LLM reasoning step didn't run for this story —
-  // `advice` (intel.personas[persona]) is then a cached fallback that, for older
-  // rows, was stamped from a keyword/persona template (fixed "${subject} could
-  // lower your operating cost..." style boilerplate, identical across every
-  // story with the same category+persona). That's fabricated, not genuine
-  // per-article analysis, so it must not be shown as "personalized_takeaway" —
-  // fall back to the real (cleaned) article text instead.
+  // `intel` (from fallbackStoryIntel in intelligence_v2.ts) is then stamped from
+  // intelligence_engine.ts's keyword/persona templates: fixed "${subject} could
+  // lower your operating cost..." takeaways, regex-matched "opportunities"
+  // ("Understand this now; it becomes a baseline expectation soon." on ANY
+  // skill/learning-flavored story), and actions that prefer feed_items.action
+  // verbatim (itself 100% populated from a closed template pool at ingestion —
+  // see cleanAction below). None of that is genuine per-article analysis, so
+  // none of it should reach the user labeled as personalized intelligence —
+  // fall back to real (cleaned) article text, or hide the field entirely.
   const cleanedWhyItMatters = (story.why_it_matters ?? "").replace(/\s*Opportunity:.*$/i, "").trim();
   const groundedTakeaway = cleanedWhyItMatters || story.summary;
+  // Independent of `degraded` — feed_items.action's contamination (source: the
+  // editorial ingestion pipeline) is a separate issue from whether the LLM
+  // reasoning step ran, so clean it the same way either way.
+  const cleanedAction = cleanAction(story.action);
 
   return {
     id: story.id,
@@ -497,9 +504,9 @@ export function personalizeCard(
     who_should_care: (u?.who_benefits ?? []).join(", ") || (story.who_for ?? "AI builders"),
     personalized_takeaway: degraded ? groundedTakeaway : (advice?.takeaway ?? groundedTakeaway),
     personalized_why: advice?.why ?? "",
-    opportunity: opps[0] ?? null,
-    opportunities: opps,
-    action: advice?.action ?? "Review the source and decide if it fits your stack this week.",
+    opportunity: degraded ? null : (opps[0] ?? null),
+    opportunities: degraded ? [] : opps,
+    action: degraded ? cleanedAction : (advice?.action || cleanedAction),
     estimated_impact: intel.impact,
     confidence: intel.impact?.confidence ?? "Medium",
     signal_score: score,

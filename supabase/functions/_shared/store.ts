@@ -8,6 +8,7 @@ import { dbWrite } from "./reliability.ts";
 import { classifyContentType } from "./content_type.ts";
 import { classifyEditorial, isOfficialCompanyNewsForArchive } from "./editorial.ts";
 import { classifySourceType } from "./source_type.ts";
+import { enrichRawItemsWithBody } from "./article_body.ts";
 
 // Best openable public URL for a feed item: the normalized primary link, else
 // the first normalizable entry in source_urls (recovers items whose primary is
@@ -34,6 +35,11 @@ const MAX_CONSECUTIVE_FAILURES = 3;
 const DISABLE_BACKOFF_MIN = [15, 30, 60, 120, 360]; // minutes
 
 export async function storeRawItems(sb: any, rawItems: RawItem[], rejected: RawItem[]): Promise<void> {
+  // Best-effort: fetch the real article body for accepted items whose teaser
+  // is thin. Mutates rawItems[].fullText in place; never throws, so a scrape
+  // failure never blocks ingestion — see _shared/article_body.ts.
+  await enrichRawItemsWithBody(rawItems);
+
   const rows = [...rawItems, ...rejected].map((i) => ({
     id: i.id,
     canonical_url: i.canonicalUrl,
@@ -86,7 +92,7 @@ export async function archiveAcceptedItems(sb: any, accepted: RawItem[]): Promis
       canonical_url: normalizeUrl(i.canonicalUrl),
       title: i.rawTitle,
       summary: (i.rawText ?? "").slice(0, 500),
-      full_content: i.rawText ?? null,
+      full_content: i.fullText ?? i.rawText ?? null,
       source: i.source,
       source_label: i.sourceLabel,
       // Publisher (real site) + real article URL, distinct from the connector.
@@ -101,6 +107,8 @@ export async function archiveAcceptedItems(sb: any, accepted: RawItem[]): Promis
       source_type: srcClass.sourceType,
       trust_score: srcClass.trustScore,
       is_official_source: srcClass.isOfficial,
+      // Publisher's own image (https URL) when the feed/page had one; else null.
+      image: i.image ?? null,
       published_at: i.published_at,
       language: "en",
       entity_status: "pending",

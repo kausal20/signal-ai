@@ -13,7 +13,7 @@
 // receives the final array via `onSaveInterests`. Everything else is stateless.
 // ---------------------------------------------------------------------------
 import { useState } from "react";
-import { ChevronLeft, RotateCcw, X, Check, Info } from "lucide-react";
+import { ChevronLeft, RotateCcw, TrendingUp, X, Check, Info } from "lucide-react";
 import { motion as fm, AnimatePresence, useReducedMotion } from "framer-motion";
 import { ScreenShell } from "../layouts/ScreenShell";
 import { BottomNav } from "../layouts/BottomNav";
@@ -71,6 +71,7 @@ interface Props {
   onToggleRoutine?: (key: string, next: boolean) => void;
   onSaveInterests?: (interests: string[]) => void;
   onReset?: () => void;
+  onOpenWeekly?: () => void;
 }
 
 const STRENGTH_COLOR: Record<LearnedTopic["strength"], string> = {
@@ -84,7 +85,7 @@ export function SettingsPage({
   goal, observations, learning, allInterests, selectedInterests,
   routine, whyReasons = [], briefTime = "8:00 AM", bookmarkCount = 0,
   editProfileSlot, notificationsSlot,
-  onNavigate, onBack, onEditProfile, onChangeGoal, onToggleRoutine, onSaveInterests, onReset,
+  onNavigate, onBack, onEditProfile, onChangeGoal, onToggleRoutine, onSaveInterests, onReset, onOpenWeekly,
 }: Props) {
   // Deferred-save draft (UI-only): mirrors committed selection until saved.
   const [draft, setDraft] = useState<string[]>(selectedInterests);
@@ -271,6 +272,13 @@ export function SettingsPage({
           </button>
         </fm.section>
       )}
+
+      {/* QUICK LINKS */}
+      <fm.section {...sectionAnim} className="mb-[30px]">
+        <SettingsCard>
+          <SettingsRow label="Weekly Report" sub="Your week in AI, at a glance" icon={<TrendingUp className="h-4 w-4" />} onClick={onOpenWeekly} />
+        </SettingsCard>
+      </fm.section>
 
       {/* 8 · RESET */}
       <fm.section {...sectionAnim}>

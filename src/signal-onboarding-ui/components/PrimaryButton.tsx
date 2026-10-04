@@ -13,10 +13,10 @@ export function PrimaryButton({ withArrow = true, disabled, className, children,
     <button
       className={cn(
         "flex h-[54px] w-full items-center justify-center gap-2 rounded-2xl text-base font-bold transition-all active:scale-[0.98]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ed-accent focus-visible:ring-offset-2 focus-visible:ring-offset-ed-bg",
         disabled
-          ? "cursor-not-allowed bg-white/[0.05] text-white/20"
-          : "bg-green text-black shadow-[0_8px_30px_hsl(152_72%_48%/0.3)]",
+          ? "cursor-not-allowed bg-ed-surface text-ed-text-3"
+          : "bg-ed-accent-ink text-ed-on-accent ",
         className
       )}
       disabled={disabled}

@@ -111,7 +111,7 @@ function domainOf(url: string | undefined): string {
   }
 }
 
-interface BrandRule {
+export interface BrandRule {
   key: SourceKey;
   label: string;
   domains: string[];
@@ -139,7 +139,7 @@ const BRAND_RULES: BrandRule[] = [
   { key: "producthunt", label: "Product Hunt", domains: ["producthunt.com"], match: /\b(producthunt|product hunt)\b/i },
 ];
 
-function brandFromDomain(url: string): BrandRule | undefined {
+export function brandFromDomain(url: string): BrandRule | undefined {
   const domain = domainOf(url);
   if (!domain) return undefined;
   return BRAND_RULES.find((rule) =>

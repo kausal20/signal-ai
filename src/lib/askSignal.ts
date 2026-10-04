@@ -148,3 +148,24 @@ export function fallbackRelatedSuggestions(userText: string, history: ChatTurn[]
     .filter((candidate, index, all) => !asked.has(suggestionKey(candidate)) && all.findIndex((item) => suggestionKey(item) === suggestionKey(candidate)) === index)
     .slice(0, 2);
 }
+
+/**
+ * Short AI-written title for a saved conversation (Signal AI → past
+ * conversations). Returns null when the service can't produce one; the caller
+ * keeps its fallback title (the first question) in that case.
+ */
+export async function generateChatTitle(turns: ChatTurn[]): Promise<string | null> {
+  try {
+    const res = await fetch(ASK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+      body: JSON.stringify({ mode: "title", messages: turns.slice(0, 4) }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    const title = typeof data?.title === "string" ? data.title.trim() : "";
+    return title.length >= 2 ? title.slice(0, 70) : null;
+  } catch {
+    return null;
+  }
+}

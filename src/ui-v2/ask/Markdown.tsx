@@ -56,7 +56,7 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   );
 }
 
-interface Block {
+export interface Block {
   type: "h" | "p" | "ul" | "ol" | "quote" | "code" | "table";
   level?: number;
   lang?: string;
@@ -64,7 +64,7 @@ interface Block {
   text?: string;
 }
 
-function parse(md: string): Block[] {
+export function parse(md: string): Block[] {
   const lines = md.replace(/\r/g, "").split("\n");
   const blocks: Block[] = [];
   let i = 0;

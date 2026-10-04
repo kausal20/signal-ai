@@ -1,27 +1,33 @@
 import { useMemo, useRef, useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Brain, Send } from "lucide-react";
 import { usePersonalizedFeed } from "@/hooks/usePersonalizedFeed";
 import { track } from "@/lib/signals";
 import type { FeedItem } from "@/data/feed";
+import { StrategyPage, type StrategyAnswer } from "@/ui-v2/pages/StrategyPage";
 
 interface Msg { role: "user" | "ai"; text: string; verdict?: string; tone?: string; }
+
+// P8 migration flag — new ui-v2 AI Strategy chat. Old page stays below until verified.
+const USE_V2_STRATEGY = true;
 
 // Dedicated AI Strategy Chat. Answers come from the CACHED advisor object only —
 // keyword-routed to today's intelligence. No LLM call, no backend change.
 export default function Strategy() {
+  const navigate = useNavigate();
   const { items, advisor } = usePersonalizedFeed();
+
+  const ranked = useMemo(
+    () => [...items].sort((a, b) => (b.intel?.signalScore ?? b.score) - (a.intel?.signalScore ?? a.score)),
+    [items],
+  );
+
   const [input, setInput] = useState("");
   const [msgs, setMsgs] = useState<Msg[]>([{
     role: "ai",
     text: "Ask me anything strategic — should you learn MCP, migrate models, or build that SaaS? I'll answer from today's signals.",
   }]);
   const endRef = useRef<HTMLDivElement>(null);
-
-  const ranked = useMemo(
-    () => [...items].sort((a, b) => (b.intel?.signalScore ?? b.score) - (a.intel?.signalScore ?? a.score)),
-    [items],
-  );
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
 
@@ -46,6 +52,20 @@ export default function Strategy() {
     setMsgs((m) => [...m, { role: "user", text: q }, answerFromCache(q)]);
     setInput("");
   };
+
+  if (USE_V2_STRATEGY) {
+    const onAsk = (q: string): StrategyAnswer => {
+      const a = answerFromCache(q);
+      return { verdict: a.verdict ?? "Worth a look", tone: a.tone ?? "hsl(38 92% 55%)", text: a.text };
+    };
+    return (
+      <StrategyPage
+        onAsk={onAsk}
+        onTrack={(q) => track("search", { query: q })}
+        onBack={() => navigate("/advisor")}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">

@@ -117,5 +117,13 @@ export function useAskSignal(context?: ArticleContext) {
     setStatus("idle");
   }, []);
 
-  return { messages, status, send, stop, newChat, busy: status !== "idle" };
+  /** Reopen a saved conversation (Signal AI → past conversations). */
+  const restore = useCallback((saved: AskMessage[]) => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setMessages(saved.map((m) => ({ ...m, streaming: false })));
+    setStatus("idle");
+  }, []);
+
+  return { messages, status, send, stop, newChat, restore, busy: status !== "idle" };
 }

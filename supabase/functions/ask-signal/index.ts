@@ -1,8 +1,8 @@
 // Ask Signal: archive-first AI intelligence streaming endpoint.
 // Request flow: intent -> Signal archive retrieval -> grounded prompt -> MeshAPI -> SSE.
 
-import { streamContent } from "../_shared/ai_provider.ts";
-import { buildGroundedSystem, classifyIntent, fallbackRelatedSuggestions, relatedReading, retrieveGrounding, type AskIntent, type GroundingContext } from "../_shared/ask_intelligence.ts";
+import { generateContent, streamContent } from "../_shared/ai_provider.ts";
+import { buildGroundedSystem, buildSmallTalkSystem, isSmallTalk, classifyIntent, fallbackRelatedSuggestions, retrieveGrounding, type AskIntent, type GroundingContext } from "../_shared/ask_intelligence.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -175,7 +175,7 @@ function appendRelatedReading(
           }
           const relatedSuggestions = normalizeSuggestions(generated, turns, grounding);
           controller.enqueue(event({ relatedSuggestions }));
-          controller.enqueue(event({ delta: appendix }));
+          if (appendix) controller.enqueue(event({ delta: appendix }));
           onComplete?.(answer + appendix, relatedSuggestions);
         }
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
@@ -222,18 +222,49 @@ function appendRelatedReading(
   });
 }
 
+// Short title for a saved conversation (client: lib/askSignal generateChatTitle).
+async function titleResponse(messages: Turn[]): Promise<Response> {
+  const json = (title: string | null) =>
+    new Response(JSON.stringify({ title }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  const turns = messages
+    .filter((t) => t && typeof t.content === "string" && t.content.trim())
+    .slice(0, 4)
+    .map((t) => `${t.role === "assistant" ? "Assistant" : "User"}: ${t.content.slice(0, 800)}`);
+  if (!turns.length) return json(null);
+  const result = await generateContent<{ title?: string } | string>({
+    feature: "ask-signal-title",
+    systemInstruction: { parts: [{ text: [
+      "Write a short title for this conversation so the user can recognise it in a history list.",
+      "3 to 6 words, plain and specific to the topic (name the company, model or tool when there is one). Title case. No quotes, emoji or ending punctuation.",
+      "For a greeting with no real topic, use \"Getting started with Signal\".",
+      "Return JSON only: {\"title\":\"...\"}",
+    ].join(String.fromCharCode(10)) }] },
+    contents: [{ role: "user", parts: [{ text: turns.join(String.fromCharCode(10, 10)) }] }],
+    generationConfig: { temperature: 0.2, maxOutputTokens: 40, responseMimeType: "application/json" },
+    timeoutMs: 12_000,
+  });
+  if (!result.success) return json(null);
+  const raw = typeof result.data === "string" ? result.data : result.data?.title ?? "";
+  const title = raw.replace(/["“”'`*#]/g, "").replace(/[.!?:;,]+$/, "").replace(/\s+/g, " ").trim().slice(0, 70);
+  return json(title.length >= 2 ? title : null);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   let messages: Turn[] = [];
   let articleContext: Record<string, unknown> | null = null;
+  let mode = "";
   try {
     const body = await req.json();
+    mode = typeof body?.mode === "string" ? body.mode : "";
     messages = Array.isArray(body?.messages) ? body.messages : [];
     // Ask Signal opened from a Top Story: the article travels with the request so
     // the assistant never has to ask "which article?".
     articleContext = body?.article_context && typeof body.article_context === "object" ? body.article_context : null;
   } catch { /* invalid input becomes the normal empty-message response */ }
+
+  if (mode === "title") return titleResponse(messages);
 
   const turns = messages
     .filter((turn) => turn && typeof turn.content === "string" && turn.content.trim())
@@ -245,10 +276,15 @@ Deno.serve(async (req) => {
   const priorQuestion = [...turns.slice(0, -1)].reverse().find((turn) => turn.role === "user")?.content;
   // With a story context, seed retrieval with the headline so even a short first
   // question ("why does this matter?") pulls the right archive + entity evidence.
-  const grounding = await retrieveGrounding(
-    question,
-    priorQuestion ?? (typeof articleContext?.headline === "string" ? articleContext.headline : undefined),
-  );
+  // Small talk ("hi", "thanks") skips retrieval and gets a conversational reply.
+  // With a story open, even a short message is about that story, so it stays grounded.
+  const smallTalk = !articleContext && isSmallTalk(question);
+  const grounding: GroundingContext = smallTalk
+    ? { intent: "UNKNOWN", entities: [], articles: [], fallback: "empty", retrievalMs: 0 }
+    : await retrieveGrounding(
+      question,
+      priorQuestion ?? (typeof articleContext?.headline === "string" ? articleContext.headline : undefined),
+    );
   const ids = grounding.articles.map((article) => article.id);
   const key = answerCacheKey(question, grounding.intent, ids);
   const cached = answerCache.get(key);
@@ -284,12 +320,12 @@ Deno.serve(async (req) => {
 
   const providerStream = streamContent({
     feature: "ask-signal",
-    systemInstruction: { parts: [{ text: buildGroundedSystem(grounding) + articleBlock }] },
+    systemInstruction: { parts: [{ text: smallTalk ? buildSmallTalkSystem() : buildGroundedSystem(grounding) + articleBlock }] },
     contents: turns.map((turn) => ({ role: turn.role === "assistant" ? "model" : "user", parts: [{ text: turn.content }] })),
-    generationConfig: { temperature: 0.35, maxOutputTokens: 1400, responseMimeType: "application/json" },
+    generationConfig: { temperature: smallTalk ? 0.6 : 0.35, maxOutputTokens: smallTalk ? 300 : 1400, responseMimeType: "application/json" },
   });
-  const canCache = cacheable(classifyIntent(question), turns.length);
-  const stream = appendRelatedReading(providerStream, relatedReading(grounding.articles), turns, grounding, canCache
+  const canCache = !smallTalk && cacheable(classifyIntent(question), turns.length);
+  const stream = appendRelatedReading(providerStream, "", turns, grounding, canCache
     ? (text, relatedSuggestions) => answerCache.set(key, { text, relatedSuggestions, expiresAt: Date.now() + ANSWER_CACHE_TTL_MS })
     : undefined);
 

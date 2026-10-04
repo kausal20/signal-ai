@@ -17,6 +17,8 @@ import {
 import { relatedProducts } from "../_shared/related_products.ts";
 
 interface SearchRpcRow extends SearchCandidate {
+  url?: string;
+  original_url?: string;
   section?: string;
   is_official_source?: boolean;
   is_official_company_news?: boolean;
@@ -26,11 +28,77 @@ interface SearchRpcRow extends SearchCandidate {
   publisher_domain?: string;
   rank?: number;
   event_type?: string;
+  content_type?: string;
+  ai_summary?: string;
+  editorial_quality_score?: number;
 }
 
 interface ResolvedEntityRow {
   r_entity_id: string; r_canonical_name: string; r_official_domain: string | null;
-  r_logo_url: string | null; r_confidence: number;
+  r_logo_url: string | null; r_confidence: number; r_entity_type?: string;
+}
+
+const PUBLISHER_ENTITY_TYPES = new Set(["company", "organization", "startup", "cloud_provider", "research_lab", "lab"]);
+
+function choosePublisherEntity(rows: ResolvedEntityRow[]): ResolvedEntityRow | null {
+  return [...rows].sort((left, right) => {
+    const confidence = right.r_confidence - left.r_confidence;
+    if (confidence) return confidence;
+    const domain = Number(!!right.r_official_domain) - Number(!!left.r_official_domain);
+    if (domain) return domain;
+    return Number(PUBLISHER_ENTITY_TYPES.has(right.r_entity_type ?? "")) - Number(PUBLISHER_ENTITY_TYPES.has(left.r_entity_type ?? ""));
+  })[0] ?? null;
+}
+
+function cleanDomain(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0];
+}
+
+/**
+ * A company can publish across several verified domains (for example Google
+ * uses google.ai, blog.google and developers.google.com). Search must treat
+ * all of those domains as first-party, not just entities.official_domain.
+ */
+async function officialEntityArticles(entity: ResolvedEntityRow, limit: number): Promise<SearchRpcRow[]> {
+  const { data: publishers, error: publisherError } = await supabase
+    .from("official_publishers")
+    .select("domain")
+    .eq("entity_id", entity.r_entity_id)
+    .eq("verified", true);
+
+  if (publisherError) {
+    console.error("[search] Official publisher lookup failed", { entity: entity.r_canonical_name, message: publisherError.message });
+  }
+
+  const domains = Array.from(new Set([
+    cleanDomain(entity.r_official_domain),
+    ...(publishers ?? []).map((row) => cleanDomain(row.domain)),
+  ].filter(Boolean)));
+  if (domains.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("content_archive")
+    .select("id,title,summary,url,source,source_label,original_category,editorial_score,quality_score,published_at,content_type,publisher,publisher_domain,original_url,is_official_company_news,event_type,editorial_quality_score,source_type,is_official_source,trust_score,ai_summary")
+    .eq("archive_status", "active")
+    .in("publisher_domain", domains)
+    .order("published_at", { ascending: false })
+    .limit(Math.min(12, Math.max(3, limit)));
+
+  if (error) {
+    console.error("[search] Official article lookup failed", { entity: entity.r_canonical_name, domains, message: error.message });
+    return [];
+  }
+
+  return (data ?? []).map((article) => ({
+    ...article,
+    category: article.original_category,
+    score: article.editorial_score ?? article.quality_score ?? 0,
+    section: "official",
+    is_official_source: true,
+    source_type: article.source_type ?? "OFFICIAL_BLOG",
+    trust_score: article.trust_score ?? 100,
+    rank: 1_000_000,
+  })) as SearchRpcRow[];
 }
 
 /**
@@ -159,13 +227,22 @@ Deno.serve(async (req) => {
     // domain and the archive has NOTHING from that domain yet, surface a real,
     // clickable "visit the source" card instead of a dead end or unrelated
     // trending content. Confidence >=60 matches resolve_query's own floor.
-    const { data: resolvedRows } = await supabase.rpc("resolve_query", { q_raw: q, max_results: 1 });
-    const resolved = (Array.isArray(resolvedRows) ? resolvedRows[0] : null) as ResolvedEntityRow | null;
+    const { data: resolvedRows } = await supabase.rpc("resolve_query", { q_raw: q, max_results: 8 });
+    const resolved = choosePublisherEntity((Array.isArray(resolvedRows) ? resolvedRows : []) as ResolvedEntityRow[]);
     if (resolved && resolved.r_confidence >= 60 && resolved.r_official_domain) {
-      const hasDomainRow = rows.some((r) => r.publisher_domain === resolved.r_official_domain);
-      if (!hasDomainRow) {
+      const officialRows = await officialEntityArticles(resolved, limit);
+      const officialIds = new Set(officialRows.map((row) => row.id));
+      rows = [...officialRows, ...rows.filter((row) => !officialIds.has(row.id))].slice(0, limit);
+
+      if (officialRows.length === 0) {
         rows = [domainCard(resolved), ...rows];
         console.info("[search] Injected domain fallback card", { q, domain: resolved.r_official_domain, confidence: resolved.r_confidence });
+      } else {
+        console.info("[search] Prioritized verified first-party articles", {
+          q,
+          entity: resolved.r_canonical_name,
+          officialCount: officialRows.length,
+        });
       }
     }
 
@@ -174,12 +251,8 @@ Deno.serve(async (req) => {
 
     logSearchTiers(q, rows);
 
-    // PRESERVE the RPC ordering. signal_search already orders results correctly:
-    // for an entity query it returns the entity's COMPLETE archive history newest
-    // -first; for free-text it orders by relevance. Re-sorting here (by the old
-    // freshness-relevance heuristic) would override that and, for a company like
-    // "Perplexity", push older launches/funding out of order. So we keep the
-    // server order and only annotate matched_fields.
+    // Preserve the RPC ordering within each tier. Verified first-party articles
+    // are merged above as the leading tier; broader keyword coverage follows.
     const terms = expandQuery(q);
     const annotated = rows.map((item) => ({ item, matched_fields: scoreCandidate(item, terms).matched_fields }));
     const results = annotated.map((r) => r.item);

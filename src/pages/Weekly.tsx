@@ -1,12 +1,17 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, BookOpen, Clock, Flame, Bookmark, Rocket, Award, TrendingUp } from "lucide-react";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { usePersonalizedFeed } from "@/hooks/usePersonalizedFeed";
 import { getStats, signalLevel } from "@/lib/stats";
 import { BottomNav } from "@/components/BottomNav";
-import { SignalScoreRing } from "@/components/SignalScoreRing";
+import { SignalScoreRing } from "@/ui-v2/components/SignalScoreRing";
+import { WeeklyPage } from "@/ui-v2/pages/WeeklyPage";
+
+// P7 migration flag — new ui-v2 Weekly Report. Old page stays below until verified.
+const USE_V2_WEEKLY = true;
 
 export default function Weekly() {
+  const navigate = useNavigate();
   const stats = getStats();
   const lvl = signalLevel(stats.readCount);
   const [bookmarks] = useLocalStorage<string[]>("signal:bookmarks", []);
@@ -15,6 +20,34 @@ export default function Weekly() {
   const hoursSaved = (stats.minutesSaved / 60).toFixed(1);
   const topInterests: string[] = profile?.top_interests ?? profile?.top_concepts ?? [];
   const weekScore = Math.min(100, stats.weekRead * 8 + bookmarks.length * 4 + lvl.level * 5);
+
+  if (USE_V2_WEEKLY) {
+    const navSection = (s: string) => {
+      if (s === "home") navigate("/");
+      else if (s === "search") navigate("/?section=search");
+      else if (s === "saved") navigate("/?section=saved");
+      else if (s === "advisor") navigate("/advisor");
+      else if (s === "settings") navigate("/settings");
+    };
+    return (
+      <WeeklyPage
+        level={lvl.level}
+        levelLabel={lvl.label}
+        levelPct={lvl.pct}
+        weekScore={weekScore}
+        weekRead={stats.weekRead}
+        hoursSaved={hoursSaved}
+        streak={stats.streak}
+        savedCount={bookmarks.length}
+        topInterests={topInterests}
+        opportunity={advisor?.best_opportunity_today?.opportunity}
+        bookmarkCount={bookmarks.length}
+        onNavigate={navSection}
+        onBack={() => navigate("/")}
+        onOpenAdvisor={() => navigate("/advisor")}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground pb-28">
@@ -88,7 +121,7 @@ export default function Weekly() {
         <Link to="/advisor" className="premium-card is-lift flex items-center justify-between p-4 pressable">
           <div className="flex items-center gap-2.5">
             <TrendingUp className="w-4 h-4 text-green" />
-            <span className="text-sm font-semibold">Open today's Daily Advisor</span>
+            <span className="text-sm font-semibold">Ask Signal about today</span>
           </div>
           <ArrowLeft className="w-4 h-4 text-muted-foreground rotate-180" />
         </Link>

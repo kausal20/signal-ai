@@ -23,7 +23,24 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet" />
+
+    <!-- Editorial routes paint their own ground colour before React mounts, so a
+         light/dark page never flashes the legacy black body first. -->
+    <script>
+      (function () {
+        try {
+          var p = location.pathname;
+          if (!/^\/(search|signal|saved|profile)?\/?$/.test(p)) return;
+          var pref = localStorage.getItem('signal:theme') || 'system';
+          var dark = pref === 'dark' || (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var deep = p.indexOf('/signal') === 0;
+          var bg = deep ? '#171817' : (dark ? '#121312' : '#F7F7F4');
+          document.documentElement.style.backgroundColor = bg;
+          document.documentElement.style.colorScheme = (dark || deep) ? 'dark' : 'light';
+        } catch (e) {}
+      })();
+    </script>
 
     
     
